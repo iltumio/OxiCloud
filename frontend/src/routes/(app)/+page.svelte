@@ -1,7 +1,6 @@
 <script lang="ts">
     import { t } from 'svelte-i18n';
-    import { onMount } from 'svelte';
-    import { apiFetch } from '$lib/api';
+    import { createFilesQuery, type FileItem } from '$lib/queries';
     import {
         Upload,
         FolderPlus,
@@ -21,86 +20,17 @@
         File as FileIcon
     } from 'lucide-svelte';
 
-    interface FileItem {
-        id: string;
-        name: string;
-        is_folder: boolean;
-        size: number;
-        updated_at: string | number;
-        type?: string;
-        mime_type?: string;
-        extension?: string;
-    }
-
     let viewMode = $state('grid'); // 'grid' or 'list'
-    let files = $state<FileItem[]>([]);
-    let isLoading = $state(true);
     let currentFolderId = $state<string | null>(null);
 
     function setView(mode: 'grid' | 'list') {
         viewMode = mode;
     }
 
-    async function loadFiles(folderId: string | null = null) {
-        isLoading = true;
-        files = [];
-        try {
-            // 1. Fetch Folders
-            let foldersUrl = '/folders';
-            if (folderId) {
-                foldersUrl = `/folders/${folderId}/contents`;
-            }
+    const query = createFilesQuery(() => currentFolderId);
 
-            // 2. Fetch Files
-            const filesParams: Record<string, string> = {};
-            if (folderId) {
-                filesParams.folder_id = folderId;
-            }
-
-            const [foldersRes, filesRes] = await Promise.all([
-                apiFetch(foldersUrl),
-                apiFetch('/files', { params: filesParams })
-            ]);
-
-            let folderItems: FileItem[] = [];
-            if (foldersRes.ok) {
-                const foldersData = await foldersRes.json();
-                folderItems = foldersData.map((f: any) => ({
-                    id: f.id,
-                    name: f.name,
-                    is_folder: true,
-                    size: 0,
-                    updated_at: f.updated_at || f.created_at,
-                    type: 'folder'
-                }));
-            } else {
-                console.error('Failed to load folders');
-            }
-
-            let fileItems: FileItem[] = [];
-            if (filesRes.ok) {
-                const filesData = await filesRes.json();
-                fileItems = filesData.map((f: any) => ({
-                    id: f.id,
-                    name: f.name,
-                    is_folder: false,
-                    size: f.size,
-                    updated_at: f.modified_at || f.created_at,
-                    type: f.mime_type,
-                    extension: f.name.split('.').pop()
-                }));
-            } else {
-                console.error('Failed to load files');
-            }
-
-            files = [...folderItems, ...fileItems];
-            currentFolderId = folderId;
-        } catch (e) {
-            console.error('Error loading content:', e);
-        } finally {
-            isLoading = false;
-        }
-    }
+    let files = $derived($query.data ?? []);
+    let isLoading = $derived($query.isLoading);
 
     function handleUpload() {
         console.log('Upload clicked');
@@ -112,7 +42,7 @@
 
     function handleItemClick(item: FileItem) {
         if (item.is_folder) {
-            loadFiles(item.id);
+            currentFolderId = item.id;
         } else {
             console.log('File clicked:', item.name);
             // TODO: Implement file viewer
@@ -162,10 +92,6 @@
             default: return FileIcon;
         }
     }
-
-    onMount(() => {
-        loadFiles();
-    });
 </script>
 
 <h1 class="mb-5 text-2xl font-bold text-[#2d3748]">{$t('nav.files')}</h1>
@@ -224,8 +150,8 @@
         class="cursor-pointer hover:underline"
         role="button"
         tabindex="0"
-        onclick={() => loadFiles(null)}
-        onkeydown={(e) => e.key === 'Enter' && loadFiles(null)}
+        onclick={() => currentFolderId = null}
+        onkeydown={(e) => e.key === 'Enter' && (currentFolderId = null)}
     >
         {$t('breadcrumb.home')}
     </span>

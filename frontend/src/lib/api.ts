@@ -58,6 +58,22 @@ export async function apiFetch(endpoint: string, options: RequestOptions = {}): 
     return response;
 }
 
+export class ApiError extends Error {
+    constructor(public status: number, message: string) {
+        super(message);
+    }
+}
+
+export async function fetchJSON<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
+    const response = await apiFetch(endpoint, options);
+    if (!response.ok) {
+        throw new ApiError(response.status, response.statusText);
+    }
+    // Handle empty response for 204
+    if (response.status === 204) return {} as T;
+    return response.json();
+}
+
 // Singleton promise to handle concurrent refresh requests
 let refreshPromise: Promise<boolean> | null = null;
 

@@ -2,6 +2,23 @@
     import { page } from '$app/stores';
     import { t } from 'svelte-i18n';
     import { Folder, Share2, Clock, Star, Trash2 } from 'lucide-svelte';
+    import { createUserQuery } from '$lib/queries';
+
+    const userQuery = createUserQuery();
+
+    let user = $derived($userQuery.data);
+    let storagePercentage = $derived.by(() => {
+        if (!user || !user.storage_quota_bytes) return 0;
+        return Math.min(100, (user.storage_used_bytes / user.storage_quota_bytes) * 100);
+    });
+
+    function formatBytes(bytes: number) {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
 </script>
 
 <div class="flex h-full w-[250px] shrink-0 flex-col bg-[#2a3042] text-white">
@@ -38,10 +55,16 @@
     </div>
 
     <div class="m-4 rounded-lg bg-[#374e65] p-4">
-        <div class="mb-2 text-center text-sm">Almacenamiento</div>
+        <div class="mb-2 text-center text-sm">{$t('nav.storage') || 'Storage'}</div>
         <div class="mb-2 h-2.5 overflow-hidden rounded-full bg-[#6b7e8f]">
-            <div class="h-full w-0 bg-[#ff5e3a] transition-all"></div>
+            <div class="h-full bg-[#ff5e3a] transition-all" style="width: {storagePercentage}%"></div>
         </div>
-        <div class="text-center text-xs text-gray-100">Calculando...</div>
+        <div class="text-center text-xs text-gray-100">
+            {#if user}
+                {formatBytes(user.storage_used_bytes)} / {formatBytes(user.storage_quota_bytes)}
+            {:else}
+                Calculating...
+            {/if}
+        </div>
     </div>
 </div>
