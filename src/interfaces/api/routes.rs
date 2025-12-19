@@ -582,11 +582,7 @@ pub fn create_api_routes(
         // HTTP caching is disabled temporarily due to compatibility issues
         // .layer(HttpCacheLayer::new(http_cache.clone()).with_max_age(folders_ttl))
 
-    // Serve OpenAPI JSON
-    use utoipa::OpenApi;
-    use crate::interfaces::api::ApiDoc;
-
-    router.route("/api-docs/openapi.json", get(|| async { 
-        Json(ApiDoc::openapi()) 
-    }))
+    // OpenAPI spec is now generated at build time and saved to openapi.json
+    // The spec is no longer served at runtime
+    router
 }

@@ -18,6 +18,9 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    profiles:
+      - default
+      - full
 
   oxicloud:
     image: oxicloud
@@ -37,6 +40,8 @@ services:
       - "DATABASE_URL=postgres://postgres:postgres@postgres/oxicloud"
     volumes:
       - storage_data:/app/storage
+    profiles:
+      - full
 
 networks:
   oxicloud:
