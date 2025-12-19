@@ -15,3 +15,6 @@ envstop:
     PROFILE=$(echo {{saved_profile}})
     echo "Stopping environment with profile: $PROFILE"
     docker compose --profile $PROFILE down
+
+backend:
+    cargo run --bin oxicloud

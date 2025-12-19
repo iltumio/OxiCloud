@@ -8,7 +8,16 @@
     "shared": "Shared",
     "recent": "Recent",
     "favorites": "Favorites",
-    "trash": "Trash"
+    "trash": "Trash",
+    "storage": "Storage"
+  },
+  "recent": {
+    "empty_state": "No recent files",
+    "empty_hint": "Files you open will appear here"
+  },
+  "favorites": {
+    "empty_state": "No favorite files",
+    "empty_hint": "Mark files as favorites to see them here"
   },
   "actions": {
     "search": "Search files...",
