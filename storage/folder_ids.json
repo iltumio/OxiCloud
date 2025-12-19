@@ -1,5 +1,9 @@
 {
-  "path_to_id": {},
-  "id_to_path": {},
-  "version": 0
+  "path_to_id": {
+    "/.trash": "d3860d41-4a74-4cb4-a72e-b632e83e2049"
+  },
+  "id_to_path": {
+    "d3860d41-4a74-4cb4-a72e-b632e83e2049": "/.trash"
+  },
+  "version": 1
 }
