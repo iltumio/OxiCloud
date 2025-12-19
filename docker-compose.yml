@@ -6,8 +6,8 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: oxicloud
-#    ports:
-#      - "5432:5432"
+    ports:
+      - "5432:5432"
     networks:
       - oxicloud
     volumes:
@@ -18,7 +18,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-  
+
   oxicloud:
     image: oxicloud
     restart: always

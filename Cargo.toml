@@ -45,6 +45,8 @@ http-body-util = "0.1.3"
 openssl = { version = "0.10.72", features = ["vendored"] }
 icalendar = "0.16.13"
 dotenv = "0.15.0"
+utoipa = { version = "5.4.0", features = ["axum_extras", "uuid", "chrono", "time", "yaml"] }
+utoipa-axum = "0.2.0"
 
 [features]
 default = []

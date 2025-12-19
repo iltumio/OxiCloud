@@ -1,51 +1,52 @@
-use serde::{Serialize, Deserialize};
 use crate::domain::entities::folder::Folder;
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 /// DTO for folder creation requests
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateFolderDto {
     /// Name of the folder to create
     pub name: String,
-    
+
     /// Parent folder ID (None for root level)
     pub parent_id: Option<String>,
 }
 
 /// DTO for folder rename requests
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct RenameFolderDto {
     /// New name for the folder
     pub name: String,
 }
 
 /// DTO for folder move requests
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct MoveFolderDto {
     /// New parent folder ID (None for root level)
     pub parent_id: Option<String>,
 }
 
 /// DTO for folder responses
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct FolderDto {
     /// Folder ID
     pub id: String,
-    
+
     /// Folder name
     pub name: String,
-    
+
     /// Path to the folder (relative)
     pub path: String,
-    
+
     /// Parent folder ID
     pub parent_id: Option<String>,
-    
+
     /// Creation timestamp
     pub created_at: u64,
-    
+
     /// Last modification timestamp
     pub modified_at: u64,
-    
+
     /// Whether this is a root folder
     pub is_root: bool,
 }
@@ -53,7 +54,7 @@ pub struct FolderDto {
 impl From<Folder> for FolderDto {
     fn from(folder: Folder) -> Self {
         let is_root = folder.parent_id().is_none();
-        
+
         Self {
             id: folder.id().to_string(),
             name: folder.name().to_string(),
@@ -77,7 +78,7 @@ impl From<FolderDto> for Folder {
             dto.path,
             dto.parent_id,
             dto.created_at,
-            dto.modified_at
+            dto.modified_at,
         )
     }
 }
