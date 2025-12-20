@@ -47,7 +47,7 @@
 
   <Button
     onclick={handleUploadClick}
-    class="bg-[#ff5e3a] hover:bg-[#e64a29] text-white rounded-full shadow-none border-0"
+    class="rounded-full"
   >
     <Upload size={16} class="mr-2" />
     {$t("actions.upload")}
@@ -58,7 +58,7 @@
       {#snippet child({ props })}
         <Button
           variant="secondary"
-          class="rounded-full bg-[#f0f3f7] hover:bg-[#cbd5e0] text-[#333] shadow-none border-0"
+          class="rounded-full"
           {...props}
         >
           <FolderPlus size={16} class="mr-2" />

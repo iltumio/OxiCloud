@@ -11,9 +11,11 @@
   import FileActions from "$lib/components/FileActions.svelte";
   import FileBreadcrumb from "$lib/components/FileBreadcrumb.svelte";
   import FileDetailsSidebar from "$lib/components/FileDetailsSidebar.svelte";
+  import CommandPalette from "$lib/components/CommandPalette.svelte";
   import { Button } from "$lib/components/ui/button";
   import * as Dialog from "$lib/components/ui/dialog";
   import { getAccessToken } from "$lib/stores/auth";
+  import { commandPaletteOpen, toggleCommandPalette, closeCommandPalette } from "$lib/stores/commandPalette";
 
   let viewMode = $state("grid"); // 'grid' or 'list'
   let isDragging = $state(false);
@@ -21,16 +23,18 @@
   let fileToDelete = $state<FileItem | null>(null);
   let fileDetailsSidebarOpen = $state(false);
   let fileToShow = $state<FileItem | null>(null);
+  let newFolderDialogOpen = $state(false);
+  let newFolderName = $state("");
+  let fileInputRef = $state<HTMLInputElement | null>(null);
 
   const queryClient = useQueryClient();
 
   // Initialize folder ID from URL on mount
-  let currentFolderId = $state<string | null>(
-    $page.url.searchParams.get("folder") ?? null
-  );
+  const initialFolderId = $page.url.searchParams.get("folder") ?? null;
+  let currentFolderId = $state<string | null>(initialFolderId);
 
   // Track the last URL we set to avoid feedback loops
-  let lastSyncedUrl = $state<string | null>(currentFolderId);
+  let lastSyncedUrl = $state<string | null>(initialFolderId);
 
   // Sync URL → state when browser navigation occurs (back/forward buttons)
   $effect(() => {
@@ -61,7 +65,7 @@
     }
 
     goto(`${next.pathname}${next.search}`, {
-      replaceState: true,
+      replaceState: false,
       keepFocus: true,
       noScroll: true,
     });
@@ -299,14 +303,154 @@
   function handleItemClick(item: FileItem) {
     if (item.is_folder) {
       currentFolderId = item.id;
+      // Close sidebar when navigating to folder
+      fileDetailsSidebarOpen = false;
+      fileToShow = null;
     } else {
-      // Download file when clicked
-      downloadFile(item);
+      // Open sidebar with file details instead of downloading
+      fileToShow = item;
+      fileDetailsSidebarOpen = true;
+    }
+  }
+
+  function handlePageClick(event: MouseEvent) {
+    // Close sidebar if clicking on page background (not on cards, sidebar, or dialogs)
+    const target = event.target as HTMLElement;
+    const isCard = target.closest('[data-slot="card"]');
+    const isSidebar = target.closest('[data-slot="file-details-sidebar"]');
+    const isDialog = target.closest('[data-slot="dialog-content"]');
+    const isDialogOverlay = target.closest('[data-slot="dialog-overlay"]');
+    const isButton = target.closest('button');
+    const isInput = target.closest('input');
+    
+    // Close sidebar if clicking outside of cards, sidebar, dialogs, and buttons
+    if (!isCard && !isSidebar && !isDialog && !isDialogOverlay && !isButton && !isInput && fileDetailsSidebarOpen) {
+      fileDetailsSidebarOpen = false;
+      fileToShow = null;
     }
   }
 
   function handleNavigate(id: string | null) {
     currentFolderId = id;
+  }
+
+  function handleKeyDown(event: KeyboardEvent) {
+    // Command palette shortcuts (Cmd/Ctrl + K)
+    if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
+      event.preventDefault();
+      toggleCommandPalette();
+      return;
+    }
+    
+    // Don't interfere with input fields (except for global shortcuts above)
+    const target = event.target as HTMLElement;
+    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+    
+    // Escape closes the sidebar or command palette
+    if (event.key === 'Escape') {
+      if ($commandPaletteOpen) {
+        event.preventDefault();
+        closeCommandPalette();
+        return;
+      }
+      if (fileDetailsSidebarOpen) {
+        event.preventDefault();
+        fileDetailsSidebarOpen = false;
+        fileToShow = null;
+        return;
+      }
+    }
+    
+    // Enter downloads the selected file
+    if (event.key === 'Enter' && fileToShow && !fileToShow.is_folder) {
+      event.preventDefault();
+      downloadFile(fileToShow);
+      return;
+    }
+    
+    // Only handle arrow keys when sidebar is open (a file is selected)
+    if (!fileDetailsSidebarOpen || !fileToShow) return;
+    
+    const arrowKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+    if (!arrowKeys.includes(event.key)) return;
+    
+    event.preventDefault();
+    
+    // Get only non-folder files for navigation
+    const selectableFiles = files.filter(f => !f.is_folder);
+    if (selectableFiles.length === 0) return;
+    
+    const currentIndex = selectableFiles.findIndex(f => f.id === fileToShow?.id);
+    if (currentIndex === -1) return;
+    
+    // Calculate grid columns by checking the grid element
+    const gridElement = document.getElementById('files-grid');
+    let columns = 1;
+    if (gridElement) {
+      const gridStyle = window.getComputedStyle(gridElement);
+      const gridTemplateColumns = gridStyle.getPropertyValue('grid-template-columns');
+      columns = gridTemplateColumns.split(' ').length;
+    }
+    
+    let newIndex = currentIndex;
+    
+    switch (event.key) {
+      case 'ArrowLeft':
+        newIndex = Math.max(0, currentIndex - 1);
+        break;
+      case 'ArrowRight':
+        newIndex = Math.min(selectableFiles.length - 1, currentIndex + 1);
+        break;
+      case 'ArrowUp':
+        newIndex = Math.max(0, currentIndex - columns);
+        break;
+      case 'ArrowDown':
+        newIndex = Math.min(selectableFiles.length - 1, currentIndex + columns);
+        break;
+    }
+    
+    if (newIndex !== currentIndex && selectableFiles[newIndex]) {
+      fileToShow = selectableFiles[newIndex];
+      
+      // Scroll the selected card into view
+      setTimeout(() => {
+        const selectedCard = document.querySelector(`[data-file-id="${selectableFiles[newIndex].id}"]`);
+        if (selectedCard) {
+          selectedCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }, 0);
+    }
+  }
+
+  // Command palette handlers
+  function handleCommandUpload() {
+    fileInputRef?.click();
+  }
+
+  function handleCommandNewFolder() {
+    newFolderDialogOpen = true;
+  }
+
+  function handleCommandGoToFile(file: FileItem) {
+    if (file.is_folder) {
+      currentFolderId = file.id;
+    } else {
+      fileToShow = file;
+      fileDetailsSidebarOpen = true;
+    }
+  }
+
+  function handleCommandSearch(query: string) {
+    console.log("Search for:", query);
+    // TODO: Implement search functionality
+  }
+
+  function handleNewFolderSubmit() {
+    if (newFolderName.trim()) {
+      handleCreateFolder(newFolderName.trim());
+      newFolderDialogOpen = false;
+      newFolderName = "";
+    }
   }
 </script>
 
@@ -314,14 +458,16 @@
   ondragover={handleDragOver}
   ondragleave={handleDragLeave}
   ondrop={handleDrop}
+  onclick={handlePageClick}
+  onkeydown={handleKeyDown}
 />
 
-<h1 class="mb-5 text-2xl font-bold text-[#2d3748]">{$t("nav.files")}</h1>
+<h1 class="mb-5 text-2xl font-bold">{$t("nav.files")}</h1>
 
 <div class="mb-5 flex justify-between items-center">
   <FileActions onUpload={uploadFiles} onCreateFolder={handleCreateFolder} />
 
-  <div class="flex overflow-hidden rounded-lg bg-[#f0f3f7] p-1 gap-1">
+  <div class="flex overflow-hidden rounded-lg bg-muted p-1 gap-1">
     <Button
       variant={viewMode === "grid" ? "secondary" : "ghost"}
       size="icon"
@@ -344,11 +490,11 @@
 </div>
 
 <div
-  class="my-5 border-2 border-dashed border-[#ddd] p-5 text-center text-[#666] rounded-lg bg-white/50"
+  class="my-5 border-2 border-dashed border-border p-5 text-center text-muted-foreground rounded-lg bg-muted/50"
   class:hidden={!isDragging}
   id="dropzone"
 >
-  <CloudUpload size={32} class="mx-auto mb-2 text-gray-400" />
+  <CloudUpload size={32} class="mx-auto mb-2 text-muted-foreground" />
   <p>{$t("dropzone.drag_files")}</p>
 </div>
 
@@ -357,13 +503,13 @@
 </div>
 
 <!-- Files Container -->
-<div>
+<div class="min-h-full">
   {#if isLoading}
-    <div class="flex items-center justify-center p-8 text-gray-500">
-      <Loader class="mr-2 animate-spin" /> Loading...
+    <div class="flex items-center justify-center p-8 text-muted-foreground">
+      <Loader class="mr-2 h-4 w-4 animate-spin" /> Loading...
     </div>
   {:else if files.length === 0}
-    <div class="flex flex-col items-center justify-center p-12 text-gray-400">
+    <div class="flex flex-col items-center justify-center p-12 text-muted-foreground">
       <FolderOpen size={48} class="mb-4" />
       <p>{$t("files.no_files") || "No files in this folder"}</p>
     </div>
@@ -375,6 +521,7 @@
       onDelete={openDeleteDialog}
       onInfo={openFileDetails}
       onPreview={previewFile}
+      selectedFileId={fileToShow?.id}
     />
   {:else}
     <FileList {files} onFileClick={handleItemClick} />
@@ -386,8 +533,8 @@
   <Dialog.Content class="sm:max-w-[425px]">
     <Dialog.Header>
       <div class="flex items-center gap-3">
-        <div class="flex h-10 w-10 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/20">
-          <AlertTriangle class="h-5 w-5 text-red-600 dark:text-red-400" />
+        <div class="flex h-10 w-10 items-center justify-center rounded-full bg-destructive/10">
+          <AlertTriangle class="h-5 w-5 text-destructive" />
         </div>
         <Dialog.Title class="text-lg font-semibold">
           {$t("dialogs.delete_file") || "Delete File"}
@@ -411,3 +558,56 @@
 
 <!-- File Details Sidebar -->
 <FileDetailsSidebar file={fileToShow} bind:open={fileDetailsSidebarOpen} />
+
+<!-- Hidden file input for uploads -->
+<input
+  type="file"
+  class="hidden"
+  multiple
+  bind:this={fileInputRef}
+  onchange={(e) => {
+    const input = e.target as HTMLInputElement;
+    if (input.files && input.files.length > 0) {
+      uploadFiles(Array.from(input.files));
+      input.value = "";
+    }
+  }}
+/>
+
+<!-- New Folder Dialog -->
+<Dialog.Root bind:open={newFolderDialogOpen}>
+  <Dialog.Content class="sm:max-w-[425px]">
+    <Dialog.Header>
+      <Dialog.Title>{$t("dialogs.new_folder") || "New Folder"}</Dialog.Title>
+      <Dialog.Description>
+        {$t("dialogs.enter_folder_name") || "Enter the name for the new folder."}
+      </Dialog.Description>
+    </Dialog.Header>
+    <div class="py-4">
+      <input
+        type="text"
+        bind:value={newFolderName}
+        placeholder="Folder name"
+        class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+        onkeydown={(e) => e.key === "Enter" && handleNewFolderSubmit()}
+      />
+    </div>
+    <Dialog.Footer>
+      <Button variant="outline" onclick={() => { newFolderDialogOpen = false; newFolderName = ""; }}>
+        {$t("actions.cancel") || "Cancel"}
+      </Button>
+      <Button onclick={handleNewFolderSubmit}>
+        {$t("actions.create") || "Create"}
+      </Button>
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>
+
+<!-- Command Palette -->
+<CommandPalette
+  {files}
+  onUpload={handleCommandUpload}
+  onNewFolder={handleCommandNewFolder}
+  onGoToFile={handleCommandGoToFile}
+  onSearch={handleCommandSearch}
+/>
