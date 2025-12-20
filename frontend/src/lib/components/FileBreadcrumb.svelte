@@ -16,7 +16,7 @@
     <Breadcrumb.Item>
       <Breadcrumb.Link
         href="#"
-        onclick={(e) => {
+        onclick={(e: MouseEvent) => {
           e.preventDefault();
           onNavigate(null);
         }}

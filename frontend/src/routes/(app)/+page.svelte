@@ -1,8 +1,10 @@
 <script lang="ts">
   import { t } from "svelte-i18n";
   import { createFilesQuery, type FileItem, queryKeys } from "$lib/queries";
-  import { useQueryClient } from "@tanstack/svelte-query";
-  import { apiFetch } from "$lib/api";
+  import { useQueryClient, createMutation } from "@tanstack/svelte-query";
+  import { uploadFile, createFolder } from "$lib/api/sdk.gen";
+  import { goto } from "$app/navigation";
+  import { page } from "$app/stores";
   import { Grid, List, CloudUpload, Loader, FolderOpen } from "lucide-svelte";
   import FileGrid from "$lib/components/FileGrid.svelte";
   import FileList from "$lib/components/FileList.svelte";
@@ -11,10 +13,52 @@
   import { Button } from "$lib/components/ui/button";
 
   let viewMode = $state("grid"); // 'grid' or 'list'
-  let currentFolderId = $state<string | null>(null);
   let isDragging = $state(false);
 
   const queryClient = useQueryClient();
+
+  // Initialize folder ID from URL on mount
+  let currentFolderId = $state<string | null>(
+    $page.url.searchParams.get("folder") ?? null
+  );
+
+  // Track the last URL we set to avoid feedback loops
+  let lastSyncedUrl = $state<string | null>(currentFolderId);
+
+  // Sync URL → state when browser navigation occurs (back/forward buttons)
+  $effect(() => {
+    const urlFolder = $page.url.searchParams.get("folder") ?? null;
+
+    // Only update state if URL changed externally (browser back/forward)
+    // and it's different from what we last synced
+    if (urlFolder !== lastSyncedUrl) {
+      currentFolderId = urlFolder;
+      lastSyncedUrl = urlFolder;
+    }
+  });
+
+  // Sync state → URL when currentFolderId changes from user interaction
+  $effect(() => {
+    const stateFolder = currentFolderId;
+
+    // Skip if we already synced this value
+    if (stateFolder === lastSyncedUrl) return;
+
+    lastSyncedUrl = stateFolder;
+
+    const next = new URL($page.url);
+    if (stateFolder) {
+      next.searchParams.set("folder", stateFolder);
+    } else {
+      next.searchParams.delete("folder");
+    }
+
+    goto(`${next.pathname}${next.search}`, {
+      replaceState: true,
+      keepFocus: true,
+      noScroll: true,
+    });
+  });
 
   function setView(mode: "grid" | "list") {
     viewMode = mode;
@@ -25,29 +69,54 @@
   let files = $derived(query.data ?? []);
   let isLoading = $derived(query.isLoading);
 
+  // TanStack Query mutation for file uploads
+  const uploadFileMut = createMutation(() => ({
+    mutationFn: async (options: { file: File; folderId: string | null }) => {
+      const { data } = await uploadFile({
+        body: {
+          file: options.file,
+          folder_id: options.folderId,
+        },
+        throwOnError: true,
+      });
+      return data;
+    },
+  }));
+
+  // TanStack Query mutation for folder creation
+  const createFolderMut = createMutation(() => ({
+    mutationFn: async (options: { name: string; parentId: string | null }) => {
+      const { data } = await createFolder({
+        body: {
+          name: options.name,
+          parent_id: options.parentId,
+        },
+        throwOnError: true,
+      });
+      return data;
+    },
+  }));
+
   async function uploadFiles(filesToUpload: File[]) {
+    // Use the current folder ID for uploads
+    const folderIdToUse = currentFolderId;
+
     // Process uploads
     for (const file of filesToUpload) {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      if (currentFolderId) {
-        formData.append("folder_id", currentFolderId);
-      }
-
       try {
-        console.log(`Uploading ${file.name}...`);
+        if (import.meta.env.DEV) {
+          console.log("Uploading", {
+            name: file.name,
+            folder_id: folderIdToUse ?? "root",
+          });
+        }
 
-        const response = await apiFetch("/files/upload", {
-          method: "POST",
-          body: formData,
+        await uploadFileMut.mutateAsync({
+          file,
+          folderId: folderIdToUse,
         });
 
-        if (response.ok) {
-          console.log(`Uploaded ${file.name} successfully`);
-        } else {
-          console.error(`Failed to upload ${file.name}`);
-        }
+        console.log(`Uploaded ${file.name} successfully`);
       } catch (error) {
         console.error(`Error uploading ${file.name}:`, error);
       }
@@ -59,9 +128,18 @@
     });
   }
 
-  function handleCreateFolder(name: string) {
-    // TODO: Implement create folder API call
-    console.log("Create folder:", name);
+  async function handleCreateFolder(name: string) {
+    try {
+      await createFolderMut.mutateAsync({
+        name,
+        parentId: currentFolderId,
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.files(currentFolderId),
+      });
+    } catch (error) {
+      console.error("Error creating folder:", error);
+    }
   }
 
   function handleDrop(event: DragEvent) {

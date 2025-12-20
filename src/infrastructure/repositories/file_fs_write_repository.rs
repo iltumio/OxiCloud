@@ -131,15 +131,18 @@ impl FileWritePort for FileFsWriteRepository {
         
         // Calculate the storage path for this file
         let storage_path = match &folder_id {
-            Some(folder_id) => {
-                StoragePath::from_string(
-                    &format!("/{}/{}", folder_id, name)
-                )
+            Some(fid) => {
+                match self.storage_mediator.get_folder_storage_path(fid).await {
+                    Ok(path) => path.join(&name),
+                    Err(_) => {
+                        // If folder not found, default to root or error? 
+                        // In hexagonal architecture, we should probably error if folder_id is provided but invalid
+                        StoragePath::root().join(&name)
+                    }
+                }
             },
             None => {
-                StoragePath::from_string(
-                    &format!("/{}", name)
-                )
+                StoragePath::root().join(&name)
             }
         };
         

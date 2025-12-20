@@ -19,6 +19,58 @@ export type CreateFolderDto = {
 };
 
 /**
+ * DTO for file responses
+ */
+export type FileDto = {
+    /**
+     * Creation timestamp
+     */
+    created_at: number;
+    /**
+     * Parent folder ID
+     */
+    folder_id?: string | null;
+    /**
+     * File ID
+     */
+    id: string;
+    /**
+     * MIME type
+     */
+    mime_type: string;
+    /**
+     * Last modification timestamp
+     */
+    modified_at: number;
+    /**
+     * File name
+     */
+    name: string;
+    /**
+     * Path to the file (relative)
+     */
+    path: string;
+    /**
+     * Size in bytes
+     */
+    size: number;
+};
+
+/**
+ * DTO for file upload requests (Documentation only)
+ */
+export type FileUploadDto = {
+    /**
+     * The file to upload
+     */
+    file: Blob | File;
+    /**
+     * Optional parent folder ID
+     */
+    folder_id?: string | null;
+};
+
+/**
  * DTO for folder responses
  */
 export type FolderDto = {
@@ -50,6 +102,16 @@ export type FolderDto = {
      * Path to the folder (relative)
      */
     path: string;
+};
+
+/**
+ * Payload for moving a file
+ */
+export type MoveFilePayload = {
+    /**
+     * Target folder ID (None means root)
+     */
+    folder_id?: string | null;
 };
 
 /**
@@ -158,6 +220,161 @@ export type RenameFolderDto = {
      */
     name: string;
 };
+
+export type ListFilesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Folder ID to list files from
+         */
+        folder_id?: string;
+    };
+    url: '/files';
+};
+
+export type ListFilesResponses = {
+    /**
+     * List of files
+     */
+    200: Array<FileDto>;
+};
+
+export type ListFilesResponse = ListFilesResponses[keyof ListFilesResponses];
+
+export type UploadFileData = {
+    body: FileUploadDto;
+    path?: never;
+    query?: never;
+    url: '/files/upload';
+};
+
+export type UploadFileErrors = {
+    /**
+     * Bad Request - No file provided
+     */
+    400: unknown;
+    /**
+     * Folder not found
+     */
+    404: unknown;
+    /**
+     * Service Unavailable
+     */
+    503: unknown;
+};
+
+export type UploadFileResponses = {
+    /**
+     * File uploaded successfully
+     */
+    201: FileDto;
+};
+
+export type UploadFileResponse = UploadFileResponses[keyof UploadFileResponses];
+
+export type DeleteFileData = {
+    body?: never;
+    path: {
+        /**
+         * File ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/files/{id}';
+};
+
+export type DeleteFileErrors = {
+    /**
+     * File not found
+     */
+    404: unknown;
+};
+
+export type DeleteFileResponses = {
+    /**
+     * File deleted
+     */
+    204: void;
+};
+
+export type DeleteFileResponse = DeleteFileResponses[keyof DeleteFileResponses];
+
+export type DownloadFileData = {
+    body?: never;
+    path: {
+        /**
+         * File ID
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Force compression (true/false)
+         */
+        compress?: boolean;
+        /**
+         * Compression level (none, fast, best, default)
+         */
+        compression_level?: string;
+        /**
+         * Force inline display (true/false)
+         */
+        inline?: boolean;
+    };
+    url: '/files/{id}';
+};
+
+export type DownloadFileErrors = {
+    /**
+     * File not found
+     */
+    404: unknown;
+    /**
+     * Service Unavailable
+     */
+    503: unknown;
+};
+
+export type DownloadFileResponses = {
+    /**
+     * File content
+     */
+    200: unknown;
+};
+
+export type MoveFileData = {
+    body: MoveFilePayload;
+    path: {
+        /**
+         * File ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/files/{id}/move';
+};
+
+export type MoveFileErrors = {
+    /**
+     * File not found
+     */
+    404: unknown;
+    /**
+     * Internal Server Error
+     */
+    500: unknown;
+};
+
+export type MoveFileResponses = {
+    /**
+     * File moved
+     */
+    200: FileDto;
+};
+
+export type MoveFileResponse = MoveFileResponses[keyof MoveFileResponses];
 
 export type ListRootFoldersData = {
     body?: never;

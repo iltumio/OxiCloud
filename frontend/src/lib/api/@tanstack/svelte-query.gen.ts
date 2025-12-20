@@ -3,8 +3,8 @@
 import { type DefaultError, type InfiniteData, infiniteQueryOptions, type MutationOptions, queryOptions } from '@tanstack/svelte-query';
 
 import { client } from '../client.gen';
-import { createFolder, deleteFolderWithTrash, getFolder, listFolderContents, listFolderContentsPaginated, listRootFolders, listRootFoldersPaginated, moveFolder, type Options, renameFolder } from '../sdk.gen';
-import type { CreateFolderData, CreateFolderResponse, DeleteFolderWithTrashData, DeleteFolderWithTrashResponse, GetFolderData, GetFolderResponse, ListFolderContentsData, ListFolderContentsPaginatedData, ListFolderContentsPaginatedResponse, ListFolderContentsResponse, ListRootFoldersData, ListRootFoldersPaginatedData, ListRootFoldersPaginatedResponse, ListRootFoldersResponse, MoveFolderData, MoveFolderResponse, RenameFolderData, RenameFolderResponse } from '../types.gen';
+import { createFolder, deleteFile, deleteFolderWithTrash, downloadFile, getFolder, listFiles, listFolderContents, listFolderContentsPaginated, listRootFolders, listRootFoldersPaginated, moveFile, moveFolder, type Options, renameFolder, uploadFile } from '../sdk.gen';
+import type { CreateFolderData, CreateFolderResponse, DeleteFileData, DeleteFileResponse, DeleteFolderWithTrashData, DeleteFolderWithTrashResponse, DownloadFileData, GetFolderData, GetFolderResponse, ListFilesData, ListFilesResponse, ListFolderContentsData, ListFolderContentsPaginatedData, ListFolderContentsPaginatedResponse, ListFolderContentsResponse, ListRootFoldersData, ListRootFoldersPaginatedData, ListRootFoldersPaginatedResponse, ListRootFoldersResponse, MoveFileData, MoveFileResponse, MoveFolderData, MoveFolderResponse, RenameFolderData, RenameFolderResponse, UploadFileData, UploadFileResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -37,6 +37,109 @@ const createQueryKey = <TOptions extends Options>(id: string, options?: TOptions
         params.query = options.query;
     }
     return [params];
+};
+
+export const listFilesQueryKey = (options?: Options<ListFilesData>) => createQueryKey('listFiles', options);
+
+/**
+ * Lists files, optionally filtered by folder ID
+ */
+export const listFilesOptions = (options?: Options<ListFilesData>) => queryOptions<ListFilesResponse, DefaultError, ListFilesResponse, ReturnType<typeof listFilesQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await listFiles({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: listFilesQueryKey(options)
+});
+
+/**
+ *
+ * * API handler for file-related operations.
+ * *
+ * * The FileHandler is responsible for processing HTTP requests related to file operations.
+ * * It handles:
+ * *
+ * * 1. File uploads through multipart form data
+ * * 2. File downloads with optional compression
+ * * 3. Listing files in folders
+ * * 4. Moving files between folders
+ * * 5. Deleting files (with trash integration)
+ * *
+ * * This component acts as an adapter in the hexagonal architecture, translating
+ * * between HTTP requests/responses and application service calls. It handles
+ * * HTTP-specific concerns like status codes, headers, and request parsing while
+ * * delegating business logic to the application services.
+ * Uploads a file
+ */
+export const uploadFileMutation = (options?: Partial<Options<UploadFileData>>): MutationOptions<UploadFileResponse, DefaultError, Options<UploadFileData>> => {
+    const mutationOptions: MutationOptions<UploadFileResponse, DefaultError, Options<UploadFileData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await uploadFile({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Deletes a file (with trash support)
+ */
+export const deleteFileMutation = (options?: Partial<Options<DeleteFileData>>): MutationOptions<DeleteFileResponse, DefaultError, Options<DeleteFileData>> => {
+    const mutationOptions: MutationOptions<DeleteFileResponse, DefaultError, Options<DeleteFileData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await deleteFile({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+export const downloadFileQueryKey = (options: Options<DownloadFileData>) => createQueryKey('downloadFile', options);
+
+/**
+ * Downloads a file with optional compression
+ */
+export const downloadFileOptions = (options: Options<DownloadFileData>) => queryOptions<unknown, DefaultError, unknown, ReturnType<typeof downloadFileQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await downloadFile({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: downloadFileQueryKey(options)
+});
+
+/**
+ * Moves a file to a different folder
+ */
+export const moveFileMutation = (options?: Partial<Options<MoveFileData>>): MutationOptions<MoveFileResponse, DefaultError, Options<MoveFileData>> => {
+    const mutationOptions: MutationOptions<MoveFileResponse, DefaultError, Options<MoveFileData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await moveFile({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
 };
 
 export const listRootFoldersQueryKey = (options?: Options<ListRootFoldersData>) => createQueryKey('listRootFolders', options);

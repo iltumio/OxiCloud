@@ -1,9 +1,13 @@
 {
   "path_to_id": {
-    "/.trash": "d3860d41-4a74-4cb4-a72e-b632e83e2049"
+    "/.trash": "d3860d41-4a74-4cb4-a72e-b632e83e2049",
+    "/test": "fb9873da-d171-49c6-b89b-eb1fed520a70",
+    "/test2": "0ce64a82-e4f9-47d9-9a17-46b140dc08d3"
   },
   "id_to_path": {
-    "d3860d41-4a74-4cb4-a72e-b632e83e2049": "/.trash"
+    "0ce64a82-e4f9-47d9-9a17-46b140dc08d3": "/test2",
+    "d3860d41-4a74-4cb4-a72e-b632e83e2049": "/.trash",
+    "fb9873da-d171-49c6-b89b-eb1fed520a70": "/test"
   },
-  "version": 1
+  "version": 3
 }

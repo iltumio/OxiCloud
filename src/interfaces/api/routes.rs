@@ -29,7 +29,7 @@ use crate::application::ports::favorites_ports::FavoritesUseCase;
 use crate::application::ports::recent_ports::RecentItemsUseCase;
 
 use crate::interfaces::api::handlers::folder_handler;
-use crate::interfaces::api::handlers::file_handler::FileHandler;
+use crate::interfaces::api::handlers::file_handler;
 use crate::interfaces::api::handlers::i18n_handler::I18nHandler;
 // Eliminamos la importación de ShareHandler ya que ahora usamos directamente el servicio
 use crate::interfaces::api::handlers::batch_handler::{
@@ -171,29 +171,9 @@ pub fn create_api_routes(
         
     // Create file routes for basic operations and trash-enabled delete
     let basic_file_router = Router::new()
-        .route("/", get(|
-            State(service): State<Arc<FileService>>,
-            axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-        | async move {
-            // Get folder_id from query parameter if present
-            let folder_id = params.get("folder_id").map(|id| id.as_str());
-            tracing::info!("API: Listando archivos con folder_id: {:?}", folder_id);
-            // Pass the service directly to the handler
-            match service.list_files(folder_id).await {
-                Ok(files) => {
-                    tracing::info!("Found {} files", files.len());
-                    (StatusCode::OK, Json(files)).into_response()
-                },
-                Err(err) => {
-                    tracing::error!("Error listing files: {}", err);
-                    (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-                        "error": format!("Error listing files: {}", err)
-                    }))).into_response()
-                }
-            }
-        }))
-        .route("/upload", post(FileHandler::upload_file))
-        .route("/{id}", get(FileHandler::download_file))
+        .route("/", get(file_handler::list_files))
+        .route("/upload", post(file_handler::upload_file))
+        .route("/{id}", get(file_handler::download_file))
         .with_state(file_service.clone());
     
     // Let's create a router for file operations with trash support
@@ -205,7 +185,7 @@ pub fn create_api_routes(
             Path(id): Path<String>
         | async move {
             tracing::info!("File delete route called explicitly for ID: {}", id);
-            FileHandler::delete_file(State(state), Path(id)).await
+            file_handler::delete_file(State(state), Path(id)).await
         }))
         .route("/{id}/move", put(|
             State(state): State<AppState>,

@@ -1,5 +1,6 @@
 import { createQuery, type CreateQueryOptions } from "@tanstack/svelte-query";
-import { fetchJSON } from "./api";
+import { listFiles, listRootFolders, listFolderContents } from "./api";
+import { client } from "./api/config";
 import type { User } from "./stores/auth";
 
 // Re-export types
@@ -30,23 +31,26 @@ export const queryKeys = {
 /* --- Fetchers --- */
 
 export async function fetchUser(): Promise<User> {
-  return fetchJSON<User>("/auth/me");
+  const { data, error } = await client.get<User>({ url: "/auth/me" });
+  if (error) throw error;
+  return data as User;
 }
 
 export async function fetchFiles(folderId: string | null): Promise<any[]> {
-  const params: Record<string, string> = {};
-  if (folderId) {
-    params.folder_id = folderId;
-  }
-  return fetchJSON<any[]>("/files", { params });
+  const { data } = await listFiles({
+    query: folderId ? { folder_id: folderId } : {},
+  });
+  return data || [];
 }
 
 export async function fetchFolders(folderId: string | null): Promise<any[]> {
-  let url = "/folders";
   if (folderId) {
-    url = `/folders/${folderId}/contents`;
+    const { data } = await listFolderContents({ path: { id: folderId } });
+    return data || [];
+  } else {
+    const { data } = await listRootFolders();
+    return data || [];
   }
-  return fetchJSON<any[]>(url);
 }
 
 export async function fetchContent(
@@ -80,8 +84,9 @@ export async function fetchContent(
 }
 
 export async function fetchRecent(): Promise<FileItem[]> {
-  const data = await fetchJSON<any[]>("/recent");
-  return data.map((f: any) => ({
+  const { data, error } = await client.get<any[]>({ url: "/recent" });
+  if (error) throw error;
+  return (data || []).map((f: any) => ({
     id: f.id,
     name: f.name,
     is_folder: f.is_folder || false,
@@ -93,8 +98,9 @@ export async function fetchRecent(): Promise<FileItem[]> {
 }
 
 export async function fetchFavorites(): Promise<FileItem[]> {
-  const data = await fetchJSON<any[]>("/favorites");
-  return data.map((f: any) => ({
+  const { data, error } = await client.get<any[]>({ url: "/favorites" });
+  if (error) throw error;
+  return (data || []).map((f: any) => ({
     id: f.item_id || f.id, // backend might return item_id
     name: f.name || "Unknown",
     is_folder: f.item_type === "folder",
@@ -106,8 +112,9 @@ export async function fetchFavorites(): Promise<FileItem[]> {
 }
 
 export async function fetchTrash(): Promise<FileItem[]> {
-  const data = await fetchJSON<any[]>("/trash");
-  return data.map((f: any) => ({
+  const { data, error } = await client.get<any[]>({ url: "/trash" });
+  if (error) throw error;
+  return (data || []).map((f: any) => ({
     id: f.id,
     name: f.name,
     is_folder: f.item_type === "folder",
@@ -119,8 +126,9 @@ export async function fetchTrash(): Promise<FileItem[]> {
 }
 
 export async function fetchShared(): Promise<FileItem[]> {
-  const data = await fetchJSON<any[]>("/shares");
-  return data.map((f: any) => ({
+  const { data, error } = await client.get<any[]>({ url: "/shares" });
+  if (error) throw error;
+  return (data || []).map((f: any) => ({
     id: f.item_id || f.id,
     name: f.name,
     is_folder: f.item_type === "folder",

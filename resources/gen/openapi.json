@@ -9,6 +9,213 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/files": {
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Lists files, optionally filtered by folder ID",
+        "operationId": "list_files",
+        "parameters": [
+          {
+            "name": "folder_id",
+            "in": "query",
+            "description": "Folder ID to list files from",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of files",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FileDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/files/upload": {
+      "post": {
+        "tags": [
+          "files"
+        ],
+        "summary": "\n * API handler for file-related operations.\n * \n * The FileHandler is responsible for processing HTTP requests related to file operations.\n * It handles:\n * \n * 1. File uploads through multipart form data\n * 2. File downloads with optional compression\n * 3. Listing files in folders\n * 4. Moving files between folders\n * 5. Deleting files (with trash integration)\n * \n * This component acts as an adapter in the hexagonal architecture, translating\n * between HTTP requests/responses and application service calls. It handles\n * HTTP-specific concerns like status codes, headers, and request parsing while\n * delegating business logic to the application services.\n Uploads a file",
+        "operationId": "upload_file",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/FileUploadDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "File uploaded successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - No file provided"
+          },
+          "404": {
+            "description": "Folder not found"
+          },
+          "503": {
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/files/{id}": {
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Downloads a file with optional compression",
+        "operationId": "download_file",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "File ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "compress",
+            "in": "query",
+            "description": "Force compression (true/false)",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "compression_level",
+            "in": "query",
+            "description": "Compression level (none, fast, best, default)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "inline",
+            "in": "query",
+            "description": "Force inline display (true/false)",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File content"
+          },
+          "404": {
+            "description": "File not found"
+          },
+          "503": {
+            "description": "Service Unavailable"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Deletes a file (with trash support)",
+        "operationId": "delete_file",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "File ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "File deleted"
+          },
+          "404": {
+            "description": "File not found"
+          }
+        }
+      }
+    },
+    "/files/{id}/move": {
+      "put": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Moves a file to a different folder",
+        "operationId": "move_file",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "File ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveFilePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "File moved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "File not found"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
     "/folders": {
       "get": {
         "tags": [
@@ -378,6 +585,83 @@
           }
         }
       },
+      "FileDto": {
+        "type": "object",
+        "description": "DTO for file responses",
+        "required": [
+          "id",
+          "name",
+          "path",
+          "size",
+          "mime_type",
+          "created_at",
+          "modified_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Creation timestamp",
+            "minimum": 0
+          },
+          "folder_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Parent folder ID"
+          },
+          "id": {
+            "type": "string",
+            "description": "File ID"
+          },
+          "mime_type": {
+            "type": "string",
+            "description": "MIME type"
+          },
+          "modified_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Last modification timestamp",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string",
+            "description": "File name"
+          },
+          "path": {
+            "type": "string",
+            "description": "Path to the file (relative)"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Size in bytes",
+            "minimum": 0
+          }
+        }
+      },
+      "FileUploadDto": {
+        "type": "object",
+        "description": "DTO for file upload requests (Documentation only)",
+        "required": [
+          "file"
+        ],
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "description": "The file to upload"
+          },
+          "folder_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional parent folder ID"
+          }
+        }
+      },
       "FolderDto": {
         "type": "object",
         "description": "DTO for folder responses",
@@ -424,6 +708,19 @@
           "path": {
             "type": "string",
             "description": "Path to the folder (relative)"
+          }
+        }
+      },
+      "MoveFilePayload": {
+        "type": "object",
+        "description": "Payload for moving a file",
+        "properties": {
+          "folder_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Target folder ID (None means root)"
           }
         }
       },
@@ -584,6 +881,10 @@
     {
       "name": "folders",
       "description": "Folder management endpoints"
+    },
+    {
+      "name": "files",
+      "description": "File management endpoints"
     }
   ]
 }

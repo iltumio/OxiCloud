@@ -64,3 +64,5 @@ logs/
 
 # Just profile state
 .just-profile
+
+storage/
