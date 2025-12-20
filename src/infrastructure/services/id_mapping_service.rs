@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 use std::collections::HashMap;
-use std::time::Duration;
 use tokio::sync::{RwLock, Mutex};
 use tokio::fs;
 use tokio::time;
@@ -70,6 +69,7 @@ struct IdMap {
 }
 
 /// Constantes para configuración
+#[allow(dead_code)]
 const SAVE_DEBOUNCE_MS: u64 = 0; // Sin debounce para garantizar guardado inmediato
 
 /// Servicio para gestionar mapeos entre rutas y IDs únicos

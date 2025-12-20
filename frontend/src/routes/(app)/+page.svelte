@@ -2,18 +2,25 @@
   import { t } from "svelte-i18n";
   import { createFilesQuery, type FileItem, queryKeys } from "$lib/queries";
   import { useQueryClient, createMutation } from "@tanstack/svelte-query";
-  import { uploadFile, createFolder } from "$lib/api/sdk.gen";
+  import { uploadFile, createFolder, deleteFile } from "$lib/api/sdk.gen";
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
-  import { Grid, List, CloudUpload, Loader, FolderOpen } from "lucide-svelte";
+  import { Grid, List, CloudUpload, Loader, FolderOpen, AlertTriangle } from "lucide-svelte";
   import FileGrid from "$lib/components/FileGrid.svelte";
   import FileList from "$lib/components/FileList.svelte";
   import FileActions from "$lib/components/FileActions.svelte";
   import FileBreadcrumb from "$lib/components/FileBreadcrumb.svelte";
+  import FileDetailsSidebar from "$lib/components/FileDetailsSidebar.svelte";
   import { Button } from "$lib/components/ui/button";
+  import * as Dialog from "$lib/components/ui/dialog";
+  import { getAccessToken } from "$lib/stores/auth";
 
   let viewMode = $state("grid"); // 'grid' or 'list'
   let isDragging = $state(false);
+  let deleteDialogOpen = $state(false);
+  let fileToDelete = $state<FileItem | null>(null);
+  let fileDetailsSidebarOpen = $state(false);
+  let fileToShow = $state<FileItem | null>(null);
 
   const queryClient = useQueryClient();
 
@@ -97,6 +104,16 @@
     },
   }));
 
+  // TanStack Query mutation for file deletion
+  const deleteFileMut = createMutation(() => ({
+    mutationFn: async (fileId: string) => {
+      await deleteFile({
+        path: { id: fileId },
+        throwOnError: true,
+      });
+    },
+  }));
+
   async function uploadFiles(filesToUpload: File[]) {
     // Use the current folder ID for uploads
     const folderIdToUse = currentFolderId;
@@ -165,12 +182,126 @@
     }
   }
 
+  async function downloadFile(file: FileItem) {
+    try {
+      // Get the base URL from environment or use relative path
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || "/api";
+      const token = getAccessToken();
+      
+      // Create download URL
+      const url = `${baseUrl}/files/${file.id}`;
+      
+      // Fetch the file as blob
+      const response = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to download file: ${response.statusText}`);
+      }
+      
+      // Get the blob
+      const blob = await response.blob();
+      
+      // Create a temporary URL and trigger download
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = file.name;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Clean up the blob URL
+      URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      console.error("Error downloading file:", error);
+      // Fallback: try direct navigation
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || "/api";
+      window.open(`${baseUrl}/files/${file.id}`, "_blank");
+    }
+  }
+
+  function openDeleteDialog(file: FileItem) {
+    fileToDelete = file;
+    deleteDialogOpen = true;
+  }
+
+  async function confirmDelete() {
+    if (!fileToDelete) return;
+
+    try {
+      await deleteFileMut.mutateAsync(fileToDelete.id);
+      // Refresh file list
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.files(currentFolderId),
+      });
+      deleteDialogOpen = false;
+      fileToDelete = null;
+    } catch (error) {
+      console.error("Error deleting file:", error);
+      // Keep dialog open on error so user can retry
+    }
+  }
+
+  function cancelDelete() {
+    deleteDialogOpen = false;
+    fileToDelete = null;
+  }
+
+  function openFileDetails(file: FileItem) {
+    fileToShow = file;
+    fileDetailsSidebarOpen = true;
+  }
+
+  async function previewFile(file: FileItem) {
+    try {
+      // Get the base URL from environment or use relative path
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || "/api";
+      const token = getAccessToken();
+      
+      // Create preview URL with inline parameter
+      const url = `${baseUrl}/files/${file.id}?inline=true`;
+      
+      // Fetch the file as blob with authentication
+      const response = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to preview file: ${response.statusText}`);
+      }
+      
+      // Get the blob
+      const blob = await response.blob();
+      
+      // Create a blob URL and open in new tab
+      const blobUrl = URL.createObjectURL(blob);
+      const newWindow = window.open(blobUrl, "_blank");
+      
+      // If popup was blocked, fallback to same window
+      if (!newWindow) {
+        window.location.href = blobUrl;
+      }
+      
+      // Clean up the blob URL after a delay (give time for the tab to load)
+      setTimeout(() => {
+        URL.revokeObjectURL(blobUrl);
+      }, 1000);
+    } catch (error) {
+      console.error("Error previewing file:", error);
+      // Fallback: try direct navigation (may not work with auth)
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || "/api";
+      window.open(`${baseUrl}/files/${file.id}?inline=true`, "_blank");
+    }
+  }
+
   function handleItemClick(item: FileItem) {
     if (item.is_folder) {
       currentFolderId = item.id;
     } else {
-      console.log("File clicked:", item.name);
-      // TODO: Implement file viewer
+      // Download file when clicked
+      downloadFile(item);
     }
   }
 
@@ -237,8 +368,46 @@
       <p>{$t("files.no_files") || "No files in this folder"}</p>
     </div>
   {:else if viewMode === "grid"}
-    <FileGrid {files} onFileClick={handleItemClick} />
+    <FileGrid
+      {files}
+      onFileClick={handleItemClick}
+      onDownload={downloadFile}
+      onDelete={openDeleteDialog}
+      onInfo={openFileDetails}
+      onPreview={previewFile}
+    />
   {:else}
     <FileList {files} onFileClick={handleItemClick} />
   {/if}
 </div>
+
+<!-- Delete Confirmation Dialog -->
+<Dialog.Root bind:open={deleteDialogOpen}>
+  <Dialog.Content class="sm:max-w-[425px]">
+    <Dialog.Header>
+      <div class="flex items-center gap-3">
+        <div class="flex h-10 w-10 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/20">
+          <AlertTriangle class="h-5 w-5 text-red-600 dark:text-red-400" />
+        </div>
+        <Dialog.Title class="text-lg font-semibold">
+          {$t("dialogs.delete_file") || "Delete File"}
+        </Dialog.Title>
+      </div>
+      <Dialog.Description class="pt-2 text-base">
+        {$t("dialogs.delete_file_confirmation") ||
+          `Are you sure you want to delete "${fileToDelete?.name}"? This action cannot be undone.`}
+      </Dialog.Description>
+    </Dialog.Header>
+    <Dialog.Footer class="flex-row justify-end gap-2 sm:gap-0">
+      <Button variant="outline" onclick={cancelDelete}>
+        {$t("actions.cancel") || "Cancel"}
+      </Button>
+      <Button variant="destructive" onclick={confirmDelete}>
+        {$t("actions.delete") || "Delete"}
+      </Button>
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>
+
+<!-- File Details Sidebar -->
+<FileDetailsSidebar file={fileToShow} bind:open={fileDetailsSidebarOpen} />

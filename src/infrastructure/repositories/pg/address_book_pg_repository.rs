@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::domain::entities::contact::AddressBook;
 use crate::domain::repositories::address_book_repository::{AddressBookRepository, AddressBookRepositoryResult};
-use crate::common::errors::{DomainError, ErrorContext};
+use crate::common::errors::DomainError;
 
 pub struct AddressBookPgRepository {
     pool: Arc<PgPool>,

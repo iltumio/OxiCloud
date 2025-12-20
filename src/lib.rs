@@ -1,4 +1,7 @@
 // Exportar los módulos principales del proyecto
+// Allow dead code for modules that contain future features (CalDAV, CardDAV, WebDAV, etc.)
+#![allow(dead_code)]
+
 pub mod common;
 pub mod domain;
 pub mod application;
