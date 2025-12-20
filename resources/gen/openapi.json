@@ -1,0 +1,890 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "oxicloud",
+    "description": "",
+    "license": {
+      "name": ""
+    },
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/files": {
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Lists files, optionally filtered by folder ID",
+        "operationId": "list_files",
+        "parameters": [
+          {
+            "name": "folder_id",
+            "in": "query",
+            "description": "Folder ID to list files from",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of files",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FileDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/files/upload": {
+      "post": {
+        "tags": [
+          "files"
+        ],
+        "summary": "\n * API handler for file-related operations.\n * \n * The FileHandler is responsible for processing HTTP requests related to file operations.\n * It handles:\n * \n * 1. File uploads through multipart form data\n * 2. File downloads with optional compression\n * 3. Listing files in folders\n * 4. Moving files between folders\n * 5. Deleting files (with trash integration)\n * \n * This component acts as an adapter in the hexagonal architecture, translating\n * between HTTP requests/responses and application service calls. It handles\n * HTTP-specific concerns like status codes, headers, and request parsing while\n * delegating business logic to the application services.\n Uploads a file",
+        "operationId": "upload_file",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/FileUploadDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "File uploaded successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request - No file provided"
+          },
+          "404": {
+            "description": "Folder not found"
+          },
+          "503": {
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/files/{id}": {
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Downloads a file with optional compression",
+        "operationId": "download_file",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "File ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "compress",
+            "in": "query",
+            "description": "Force compression (true/false)",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "compression_level",
+            "in": "query",
+            "description": "Compression level (none, fast, best, default)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "inline",
+            "in": "query",
+            "description": "Force inline display (true/false)",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File content"
+          },
+          "404": {
+            "description": "File not found"
+          },
+          "503": {
+            "description": "Service Unavailable"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Deletes a file (with trash support)",
+        "operationId": "delete_file",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "File ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "File deleted"
+          },
+          "404": {
+            "description": "File not found"
+          }
+        }
+      }
+    },
+    "/files/{id}/move": {
+      "put": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Moves a file to a different folder",
+        "operationId": "move_file",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "File ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveFilePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "File moved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "File not found"
+          },
+          "500": {
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/folders": {
+      "get": {
+        "tags": [
+          "folders"
+        ],
+        "summary": "Lists root folders",
+        "operationId": "list_root_folders",
+        "responses": {
+          "200": {
+            "description": "List of root folders",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FolderDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "folders"
+        ],
+        "summary": "Creates a new folder",
+        "operationId": "create_folder",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFolderDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Folder created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Parent folder not found"
+          },
+          "409": {
+            "description": "Folder already exists"
+          }
+        }
+      }
+    },
+    "/folders/paginated": {
+      "get": {
+        "tags": [
+          "folders"
+        ],
+        "summary": "Lists root folders with pagination",
+        "operationId": "list_root_folders_paginated",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Página solicitada (comienza en 0)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "description": "Tamaño de página solicitado",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of root folders",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponseDto_FolderDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/folders/{id}": {
+      "get": {
+        "tags": [
+          "folders"
+        ],
+        "summary": "Gets a folder by ID",
+        "operationId": "get_folder",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Folder ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Folder details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Folder not found"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "folders"
+        ],
+        "summary": "Deletes a folder with trash functionality",
+        "operationId": "delete_folder_with_trash",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Folder ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Folder deleted"
+          },
+          "404": {
+            "description": "Folder not found"
+          }
+        }
+      }
+    },
+    "/folders/{id}/contents": {
+      "get": {
+        "tags": [
+          "folders"
+        ],
+        "summary": "Lists folder contents",
+        "operationId": "list_folder_contents",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Folder ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of folder contents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FolderDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/folders/{id}/contents/paginated": {
+      "get": {
+        "tags": [
+          "folders"
+        ],
+        "summary": "Lists folder contents with pagination",
+        "operationId": "list_folder_contents_paginated",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Folder ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Página solicitada (comienza en 0)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "description": "Tamaño de página solicitado",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated list of folder contents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedResponseDto_FolderDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/folders/{id}/move": {
+      "put": {
+        "tags": [
+          "folders"
+        ],
+        "summary": "Moves a folder to a new parent",
+        "operationId": "move_folder",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Folder ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveFolderDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Folder moved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Folder not found"
+          },
+          "409": {
+            "description": "Destination conflict"
+          }
+        }
+      }
+    },
+    "/folders/{id}/rename": {
+      "put": {
+        "tags": [
+          "folders"
+        ],
+        "summary": "Renames a folder",
+        "operationId": "rename_folder",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Folder ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameFolderDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Folder renamed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Folder not found"
+          },
+          "409": {
+            "description": "Folder name already exists"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CreateFolderDto": {
+        "type": "object",
+        "description": "DTO for folder creation requests",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the folder to create"
+          },
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Parent folder ID (None for root level)"
+          }
+        }
+      },
+      "FileDto": {
+        "type": "object",
+        "description": "DTO for file responses",
+        "required": [
+          "id",
+          "name",
+          "path",
+          "size",
+          "mime_type",
+          "created_at",
+          "modified_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Creation timestamp",
+            "minimum": 0
+          },
+          "folder_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Parent folder ID"
+          },
+          "id": {
+            "type": "string",
+            "description": "File ID"
+          },
+          "mime_type": {
+            "type": "string",
+            "description": "MIME type"
+          },
+          "modified_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Last modification timestamp",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string",
+            "description": "File name"
+          },
+          "path": {
+            "type": "string",
+            "description": "Path to the file (relative)"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Size in bytes",
+            "minimum": 0
+          }
+        }
+      },
+      "FileUploadDto": {
+        "type": "object",
+        "description": "DTO for file upload requests (Documentation only)",
+        "required": [
+          "file"
+        ],
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "description": "The file to upload"
+          },
+          "folder_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional parent folder ID"
+          }
+        }
+      },
+      "FolderDto": {
+        "type": "object",
+        "description": "DTO for folder responses",
+        "required": [
+          "id",
+          "name",
+          "path",
+          "created_at",
+          "modified_at",
+          "is_root"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Creation timestamp",
+            "minimum": 0
+          },
+          "id": {
+            "type": "string",
+            "description": "Folder ID"
+          },
+          "is_root": {
+            "type": "boolean",
+            "description": "Whether this is a root folder"
+          },
+          "modified_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Last modification timestamp",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string",
+            "description": "Folder name"
+          },
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Parent folder ID"
+          },
+          "path": {
+            "type": "string",
+            "description": "Path to the folder (relative)"
+          }
+        }
+      },
+      "MoveFilePayload": {
+        "type": "object",
+        "description": "Payload for moving a file",
+        "properties": {
+          "folder_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Target folder ID (None means root)"
+          }
+        }
+      },
+      "MoveFolderDto": {
+        "type": "object",
+        "description": "DTO for folder move requests",
+        "properties": {
+          "parent_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New parent folder ID (None for root level)"
+          }
+        }
+      },
+      "PaginatedResponseDto_FolderDto": {
+        "type": "object",
+        "description": "Un DTO para representar una respuesta paginada",
+        "required": [
+          "items",
+          "pagination"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "DTO for folder responses",
+              "required": [
+                "id",
+                "name",
+                "path",
+                "created_at",
+                "modified_at",
+                "is_root"
+              ],
+              "properties": {
+                "created_at": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "Creation timestamp",
+                  "minimum": 0
+                },
+                "id": {
+                  "type": "string",
+                  "description": "Folder ID"
+                },
+                "is_root": {
+                  "type": "boolean",
+                  "description": "Whether this is a root folder"
+                },
+                "modified_at": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "Last modification timestamp",
+                  "minimum": 0
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Folder name"
+                },
+                "parent_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Parent folder ID"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Path to the folder (relative)"
+                }
+              }
+            },
+            "description": "Datos en la página actual"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/PaginationDto",
+            "description": "Información de paginación"
+          }
+        }
+      },
+      "PaginationDto": {
+        "type": "object",
+        "description": "Un DTO para representar información de paginación",
+        "required": [
+          "page",
+          "page_size",
+          "total_items",
+          "total_pages",
+          "has_next",
+          "has_prev"
+        ],
+        "properties": {
+          "has_next": {
+            "type": "boolean",
+            "description": "Indica si hay una página siguiente"
+          },
+          "has_prev": {
+            "type": "boolean",
+            "description": "Indica si hay una página anterior"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Página actual (comienza en 0)",
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Tamaño de página",
+            "minimum": 0
+          },
+          "total_items": {
+            "type": "integer",
+            "description": "Número total de elementos",
+            "minimum": 0
+          },
+          "total_pages": {
+            "type": "integer",
+            "description": "Número total de páginas",
+            "minimum": 0
+          }
+        }
+      },
+      "PaginationRequestDto": {
+        "type": "object",
+        "description": "Un DTO para representar una solicitud de paginación",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Página solicitada (comienza en 0)",
+            "minimum": 0
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Tamaño de página solicitado",
+            "minimum": 0
+          }
+        }
+      },
+      "RenameFolderDto": {
+        "type": "object",
+        "description": "DTO for folder rename requests",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "New name for the folder"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "folders",
+      "description": "Folder management endpoints"
+    },
+    {
+      "name": "files",
+      "description": "File management endpoints"
+    }
+  ]
+}

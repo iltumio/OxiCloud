@@ -671,23 +671,16 @@ impl FileRepository for FileFsRepository {
         content: Vec<u8>,
     ) -> FileRepositoryResult<File>
     {
-        // Get the folder path from the mediator
+        // Get the folder storage path from the mediator
         let folder_path = match &folder_id {
             Some(id) => {
-                match self.storage_mediator.get_folder_path(id).await {
+                match self.storage_mediator.get_folder_storage_path(id).await {
                     Ok(path) => {
-                        tracing::info!("Using folder path: {:?} for folder_id: {:?}", path, id);
-                        // Convert to StoragePath - use just the folder name to avoid path duplication
-                        // Get just the folder name to avoid path duplication
-                        let lossy = path.to_string_lossy().to_string();
-                        let folder_name = path.file_name()
-                            .and_then(|f| f.to_str())
-                            .unwrap_or_else(|| &lossy);
-                        tracing::info!("Using folder name: {} for StoragePath", folder_name);
-                        StoragePath::from_string(folder_name)
+                        tracing::info!("Using folder storage path: {:?} for folder_id: {:?}", path.to_string(), id);
+                        path
                     },
                     Err(e) => {
-                        tracing::error!("Error getting folder: {}", e);
+                        tracing::error!("Error getting folder storage path: {}", e);
                         // Root path
                         StoragePath::root()
                     },
@@ -938,23 +931,16 @@ impl FileRepository for FileFsRepository {
         content: Vec<u8>,
     ) -> FileRepositoryResult<File>
     {
-        // Get the folder path from the mediator
+        // Get the folder storage path from the mediator
         let folder_path = match &folder_id {
             Some(fid) => {
-                match self.storage_mediator.get_folder_path(fid).await {
+                match self.storage_mediator.get_folder_storage_path(fid).await {
                     Ok(path) => {
-                        tracing::info!("Using folder path: {:?} for folder_id: {:?}", path, fid);
-                        // Convert to StoragePath - use just the folder name to avoid path duplication
-                        // Get just the folder name to avoid path duplication
-                        let lossy = path.to_string_lossy().to_string();
-                        let folder_name = path.file_name()
-                            .and_then(|f| f.to_str())
-                            .unwrap_or_else(|| &lossy);
-                        tracing::info!("Using folder name: {} for StoragePath", folder_name);
-                        StoragePath::from_string(folder_name)
+                        tracing::info!("Using folder storage path: {:?} for folder_id: {:?}", path.to_string(), fid);
+                        path
                     },
                     Err(e) => {
-                        tracing::error!("Error getting folder: {}", e);
+                        tracing::error!("Error getting folder storage path: {}", e);
                         // Root path
                         StoragePath::root()
                     },
@@ -1193,20 +1179,13 @@ impl FileRepository for FileFsRepository {
         // Get the folder storage path
         let folder_storage_path = match folder_id {
             Some(id) => {
-                match self.storage_mediator.get_folder_path(id).await {
+                match self.storage_mediator.get_folder_storage_path(id).await {
                     Ok(path) => {
-                        tracing::info!("Found folder with path: {:?}", path);
-                        // Convert to StoragePath - use just the folder name to avoid path duplication
-                        // Get just the folder name to avoid path duplication
-                        let lossy = path.to_string_lossy().to_string();
-                        let folder_name = path.file_name()
-                            .and_then(|f| f.to_str())
-                            .unwrap_or_else(|| &lossy);
-                        tracing::info!("Using folder name: {} for StoragePath", folder_name);
-                        StoragePath::from_string(folder_name)
+                        tracing::info!("Found folder with storage path: {:?}", path.to_string());
+                        path
                     },
                     Err(e) => {
-                        tracing::error!("Error getting folder by ID: {}: {}", id, e);
+                        tracing::error!("Error getting folder storage path by ID: {}: {}", id, e);
                         return Ok(Vec::new());
                     },
                 }
@@ -1529,23 +1508,17 @@ impl FileRepository for FileFsRepository {
             return Ok(original_file);
         }
         
-        // Get the target folder path
+        // Get the target folder storage path
         let target_folder_path = match &target_folder_id {
             Some(folder_id) => {
-                match self.storage_mediator.get_folder_path(folder_id).await {
+                match self.storage_mediator.get_folder_storage_path(folder_id).await {
                     Ok(path) => {
-                        // Convert to StoragePath - use just the folder name to avoid path duplication
-                        // Get just the folder name to avoid path duplication
-                        let lossy = path.to_string_lossy().to_string();
-                        let folder_name = path.file_name()
-                            .and_then(|f| f.to_str())
-                            .unwrap_or_else(|| &lossy);
-                        tracing::info!("Target folder name: {} for StoragePath", folder_name);
-                        StoragePath::from_string(folder_name)
+                        tracing::info!("Target folder storage path: {:?} for ID: {}", path.to_string(), folder_id);
+                        path
                     },
                     Err(e) => {
                         return Err(FileRepositoryError::Other(
-                            format!("Could not get target folder: {}", e)
+                            format!("Could not get target folder storage path: {}", e)
                         ));
                     }
                 }

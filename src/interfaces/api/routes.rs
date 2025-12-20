@@ -28,8 +28,8 @@ use crate::application::ports::share_ports::ShareUseCase;
 use crate::application::ports::favorites_ports::FavoritesUseCase;
 use crate::application::ports::recent_ports::RecentItemsUseCase;
 
-use crate::interfaces::api::handlers::folder_handler::FolderHandler;
-use crate::interfaces::api::handlers::file_handler::FileHandler;
+use crate::interfaces::api::handlers::folder_handler;
+use crate::interfaces::api::handlers::file_handler;
 use crate::interfaces::api::handlers::i18n_handler::I18nHandler;
 // Eliminamos la importación de ShareHandler ya que ahora usamos directamente el servicio
 use crate::interfaces::api::handlers::batch_handler::{
@@ -145,104 +145,35 @@ pub fn create_api_routes(
     // Start the cleanup task for HTTP cache
     start_cache_cleanup_task(http_cache.clone());
     
-    // Create the basic folders router with service operations
+    // Create the basic folders folders_router with service operations
     let folders_basic_router = Router::new()
-        .route("/", post(FolderHandler::create_folder))
-        .route("/", get(|State(service): State<Arc<FolderService>>| async move {
-            // No parent ID means list root folders
-            FolderHandler::list_folders(State(service), None).await
-        }))
-        .route("/paginated", get(|
-            State(service): State<Arc<FolderService>>,
-            pagination: Query<PaginationRequestDto>
-        | async move {
-            // Paginación para carpetas raíz (sin parent)
-            FolderHandler::list_folders_paginated(State(service), pagination, None).await
-        }))
-        .route("/{id}", get(FolderHandler::get_folder))
-        .route("/{id}/contents", get(|
-            State(service): State<Arc<FolderService>>,
-            Path(id): Path<String>
-        | async move {
-            // Listar contenido de una carpeta por su ID
-            FolderHandler::list_folders(State(service), Some(&id)).await
-        }))
-        .route("/{id}/contents/paginated", get(|
-            State(service): State<Arc<FolderService>>,
-            Path(id): Path<String>,
-            pagination: Query<PaginationRequestDto>
-        | async move {
-            // Listar contenido paginado de una carpeta por su ID
-            FolderHandler::list_folders_paginated(State(service), pagination, Some(&id)).await
-        }))
-        .route("/{id}/rename", put(FolderHandler::rename_folder))
-        .route("/{id}/move", put(FolderHandler::move_folder))
+        .route("/", post(folder_handler::create_folder))
+        .route("/", get(folder_handler::list_root_folders))
+        .route("/paginated", get(folder_handler::list_root_folders_paginated))
+        .route("/{id}", get(folder_handler::get_folder))
+        .route("/{id}/contents", get(folder_handler::list_folder_contents))
+        .route("/{id}/contents/paginated", get(folder_handler::list_folder_contents_paginated))
+        .route("/{id}/rename", put(folder_handler::rename_folder))
+        .route("/{id}/move", put(folder_handler::move_folder))
         .with_state(folder_service.clone());
         
     // Special route for ZIP download that requires AppState instead of just FolderService
     let folder_zip_router = Router::new()
-        .route("/{id}/download", get(FolderHandler::download_folder_zip))
+        .route("/{id}/download", get(folder_handler::download_folder_zip))
         .with_state(app_state.clone());
         
     // Create folder operations that use trash separately
     let folders_ops_router = Router::new()
-        .route("/{id}", delete(|
-            State(state): State<AppState>,
-            Path(id): Path<String>
-        | async move {
-            // Try to use trash service if available
-            if let Some(trash_service) = &state.trash_service {
-                tracing::info!("Moving folder to trash: {}", id);
-                let default_user = "default".to_string();
-                
-                match trash_service.move_to_trash(&id, "folder", &default_user).await {
-                    Ok(_) => {
-                        tracing::info!("Folder successfully moved to trash: {}", id);
-                        return StatusCode::NO_CONTENT.into_response();
-                    },
-                    Err(err) => {
-                        tracing::warn!("Could not move folder to trash, falling back to permanent delete: {}", err);
-                        // Fall through to regular delete
-                    }
-                }
-            }
-            
-            // Fallback to permanent delete
-            let folder_service = &state.applications.folder_service;
-            match folder_service.delete_folder(&id).await {
-                Ok(_) => StatusCode::NO_CONTENT.into_response(),
-                Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response()
-            }
-        }));
+        .route("/{id}", delete(folder_handler::delete_folder_with_trash));
         
     // Merge the routers
     let folders_router = folders_basic_router.merge(folders_ops_router).merge(folder_zip_router);
         
     // Create file routes for basic operations and trash-enabled delete
     let basic_file_router = Router::new()
-        .route("/", get(|
-            State(service): State<Arc<FileService>>,
-            axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
-        | async move {
-            // Get folder_id from query parameter if present
-            let folder_id = params.get("folder_id").map(|id| id.as_str());
-            tracing::info!("API: Listando archivos con folder_id: {:?}", folder_id);
-            // Pass the service directly to the handler
-            match service.list_files(folder_id).await {
-                Ok(files) => {
-                    tracing::info!("Found {} files", files.len());
-                    (StatusCode::OK, Json(files)).into_response()
-                },
-                Err(err) => {
-                    tracing::error!("Error listing files: {}", err);
-                    (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
-                        "error": format!("Error listing files: {}", err)
-                    }))).into_response()
-                }
-            }
-        }))
-        .route("/upload", post(FileHandler::upload_file))
-        .route("/{id}", get(FileHandler::download_file))
+        .route("/", get(file_handler::list_files))
+        .route("/upload", post(file_handler::upload_file))
+        .route("/{id}", get(file_handler::download_file))
         .with_state(file_service.clone());
     
     // Let's create a router for file operations with trash support
@@ -254,7 +185,7 @@ pub fn create_api_routes(
             Path(id): Path<String>
         | async move {
             tracing::info!("File delete route called explicitly for ID: {}", id);
-            FileHandler::delete_file(State(state), Path(id)).await
+            file_handler::delete_file(State(state), Path(id)).await
         }))
         .route("/{id}/move", put(|
             State(state): State<AppState>,
@@ -625,45 +556,13 @@ pub fn create_api_routes(
     
     // For now, just use the router as is - we'll properly implement the auth middleware later
     // when all implementation details are fixed
-    let router = router;
-    
-    // Apply compression and tracing layers
-    // Note: We've removed the direct trash endpoints due to handler type compatibility issues
-    // These will need to be implemented directly in main.rs or by modifying the file/folder handlers
-    if trash_service.is_some() {
-        tracing::info!("Trash service is available - trash view is functional");
-    }
-    
-    // Add WebDAV routes if needed
-    let webdav_enabled = true; // In production, you'd read this from a config
-    let router = if webdav_enabled {
-        use crate::interfaces::api::handlers::webdav_handler;
-        router.merge(webdav_handler::webdav_routes())
-    } else {
-        router
-    };
-    
-    // Add CalDAV routes if needed
-    let caldav_enabled = true; // In production, you'd read this from a config
-    let router = if caldav_enabled {
-        use crate::interfaces::api::handlers::caldav_handler;
-        router.nest("/caldav", caldav_handler::caldav_routes())
-    } else {
-        router
-    };
-    
-    // Add CardDAV routes if needed
-    let carddav_enabled = true; // In production, you'd read this from a config
-    let router = if carddav_enabled {
-        // Note: We'll implement carddav_handler in the next phase
-        router
-    } else {
-        router
-    };
-
-    router
+    let router = router
         .layer(CompressionLayer::new())
-        .layer(TraceLayer::new_for_http())
+        .layer(TraceLayer::new_for_http());
         // HTTP caching is disabled temporarily due to compatibility issues
         // .layer(HttpCacheLayer::new(http_cache.clone()).with_max_age(folders_ttl))
+
+    // OpenAPI spec is now generated at build time and saved to openapi.json
+    // The spec is no longer served at runtime
+    router
 }

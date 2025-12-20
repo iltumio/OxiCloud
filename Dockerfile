@@ -1,19 +1,22 @@
-# Stage 1: Cache dependencies
-FROM rust:1.85-alpine AS cacher
+# Stage 0: base image
+FROM rust:1.85-alpine AS base
 WORKDIR /app
 RUN apk --no-cache upgrade && \
-    apk add --no-cache musl-dev pkgconfig postgresql-dev gcc perl make
+    apk add --no-cache musl-dev pkgconfig postgresql-dev gcc perl make curl
+
+# Stage 1: Cache dependencies
+FROM base AS cacher
+WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 # Create a minimal project to download and cache dependencies
 RUN mkdir -p src && \
     echo 'fn main() { println!("Dummy build for caching dependencies"); }' > src/main.rs && \
     cargo build --release && \
     rm -rf src target/release/deps/oxicloud*
+
 # Stage 2: Build the application
-FROM rust:1.85-alpine AS builder
+FROM base AS builder
 WORKDIR /app
-RUN apk --no-cache upgrade && \
-    apk add --no-cache musl-dev pkgconfig postgresql-dev gcc perl make
 # Copy cached dependencies
 COPY --from=cacher /app/target target
 COPY --from=cacher /usr/local/cargo /usr/local/cargo

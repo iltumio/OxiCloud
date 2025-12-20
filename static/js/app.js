@@ -1137,6 +1137,44 @@ window.switchToFavoritesView = switchToFavoritesView;
 window.switchToRecentFilesView = switchToRecentFilesView;
 
 /**
+ * Handle initial routing based on URL path
+ */
+function handleInitialRoute() {
+    const path = window.location.pathname;
+    console.log("Handling initial route for path:", path);
+    
+    // Ensure elements are cached
+    if (!elements.trashBtn) cacheElements();
+    
+    if (path === '/recent') {
+        console.log("Routing to Recent view");
+        setTimeout(() => {
+            if (window.switchToRecentFilesView) window.switchToRecentFilesView();
+            else loadFiles();
+        }, 100);
+    } else if (path === '/favorites') {
+        console.log("Routing to Favorites view");
+        setTimeout(() => {
+            if (window.switchToFavoritesView) window.switchToFavoritesView();
+            else loadFiles();
+        }, 100);
+    } else if (path === '/trash') {
+        console.log("Routing to Trash view");
+        setTimeout(() => {
+            if (elements.trashBtn) {
+                elements.trashBtn.click();
+            } else {
+                console.warn("Trash button not found, falling back to files");
+                loadFiles();
+            }
+        }, 100);
+    } else {
+        // Default to files view
+        loadFiles();
+    }
+}
+
+/**
  * Check if user is authenticated and load user's home folder
  */
 function checkAuthentication() {
@@ -1201,7 +1239,7 @@ function checkAuthentication() {
         // Proceed directly to load files
         app.currentPath = '';
         ui.updateBreadcrumb('');
-        loadFiles();
+        handleInitialRoute();
         return;
     }
     
@@ -1267,7 +1305,7 @@ function checkAuthentication() {
             // Find and load default folder
             app.currentPath = '';
             ui.updateBreadcrumb('');
-            loadFiles();
+            handleInitialRoute();
         }
     } catch (error) {
         console.error('Error during authentication check:', error);
