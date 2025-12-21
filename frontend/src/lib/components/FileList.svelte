@@ -3,12 +3,22 @@
   import FileIcon from "./FileIcon.svelte";
   import { formatSize, formatDate } from "$lib/utils";
   import { t } from "svelte-i18n";
+  import { Heart } from "lucide-svelte";
+  import { Button } from "./ui/button";
+  import { cn } from "$lib/utils";
   import * as Table from "./ui/table";
 
   let {
     files,
     onFileClick,
-  }: { files: FileItem[]; onFileClick: (file: FileItem) => void } = $props();
+    onToggleFavorite,
+    favoriteIds = new Set(),
+  }: {
+    files: FileItem[];
+    onFileClick: (file: FileItem) => void;
+    onToggleFavorite?: (file: FileItem) => void;
+    favoriteIds?: Set<string>;
+  } = $props();
 </script>
 
 <div class="w-full overflow-hidden rounded-lg border bg-card" id="files-list-view">
@@ -29,6 +39,28 @@
         >
           <Table.Cell>
             <div class="flex items-center gap-3">
+              {#if onToggleFavorite}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  class={cn(
+                    "h-6 w-6 shrink-0",
+                    favoriteIds.has(file.id)
+                      ? "text-red-500 hover:text-red-600"
+                      : "text-muted-foreground hover:text-red-500"
+                  )}
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    onToggleFavorite(file);
+                  }}
+                  title={favoriteIds.has(file.id) ? "Remove from favorites" : "Add to favorites"}
+                >
+                  <Heart
+                    size={14}
+                    fill={favoriteIds.has(file.id) ? "currentColor" : "none"}
+                  />
+                </Button>
+              {/if}
               <FileIcon {file} size={18} />
               <span class="font-medium">{file.name}</span>
             </div>

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { t } from "svelte-i18n";
-  import { createFilesQuery, type FileItem, queryKeys } from "$lib/queries";
+  import { createFilesQuery, createFavoritesQuery, type FileItem, queryKeys, addToFavorites, removeFromFavorites } from "$lib/queries";
   import { useQueryClient, createMutation } from "@tanstack/svelte-query";
   import { uploadFile, createFolder, deleteFile } from "$lib/api/sdk.gen";
   import { goto } from "$app/navigation";
@@ -38,9 +38,13 @@
   }
 
   const query = createFilesQuery(() => currentFolderId);
+  const favoritesQuery = createFavoritesQuery();
 
   let files = $derived(query.data ?? []);
   let isLoading = $derived(query.isLoading);
+  
+  // Create a Set of favorite IDs for quick lookup
+  let favoriteIds = $derived(new Set((favoritesQuery.data ?? []).map(f => f.id)));
 
   // TanStack Query mutation for file uploads
   const uploadFileMut = createMutation(() => ({
@@ -79,6 +83,35 @@
       });
     },
   }));
+
+  // TanStack Query mutation for toggling favorites
+  const toggleFavoriteMut = createMutation(() => ({
+    mutationFn: async (file: FileItem) => {
+      const itemType = file.is_folder ? "folder" : "file";
+      const currentFavorites = favoritesQuery.data ?? [];
+      const isFavorite = currentFavorites.some(f => f.id === file.id);
+      
+      if (isFavorite) {
+        await removeFromFavorites(file.id, itemType);
+      } else {
+        await addToFavorites(file.id, itemType);
+      }
+    },
+    onSuccess: () => {
+      // Invalidate favorites query to refresh the list
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.favorites,
+      });
+    },
+  }));
+
+  async function handleToggleFavorite(file: FileItem) {
+    try {
+      await toggleFavoriteMut.mutateAsync(file);
+    } catch (error) {
+      console.error("Error toggling favorite:", error);
+    }
+  }
 
   async function uploadFiles(filesToUpload: File[]) {
     // Use the current folder ID for uploads
@@ -287,8 +320,11 @@
     const isInput = target.closest('input');
     
     // Close sidebar if clicking outside of cards, sidebar, dialogs, and buttons
-    if (!isCard && !isSidebar && !isDialog && !isDialogOverlay && !isButton && !isInput && fileDetailsSidebarOpen) {
-      fileDetailsSidebarOpen = false;
+    if (!isCard && !isSidebar && !isDialog && !isDialogOverlay && !isButton && !isInput) {
+      if (fileDetailsSidebarOpen) {
+        fileDetailsSidebarOpen = false;
+      }
+      // Clear selection if clicking on background, even if sidebar was closed
       fileToShow = null;
     }
   }
@@ -315,37 +351,40 @@
       if (fileDetailsSidebarOpen) {
         event.preventDefault();
         fileDetailsSidebarOpen = false;
-        fileToShow = null;
+        // Keep selection active to allow navigation to continue
         return;
       }
     }
     
-    // Enter downloads the selected file
-    if (event.key === 'Enter' && fileToShow && !fileToShow.is_folder) {
+    // Enter downloads the selected file or opens the folder
+    if (event.key === 'Enter' && fileToShow) {
       event.preventDefault();
-      downloadFile(fileToShow);
+      if (fileToShow.is_folder) {
+        goto(`/files/${fileToShow.id}`);
+        fileToShow = null;
+      } else {
+        downloadFile(fileToShow);
+      }
       return;
     }
-    
-    // Only handle arrow keys when sidebar is open (a file is selected)
-    if (!fileDetailsSidebarOpen || !fileToShow) return;
     
     const arrowKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
     if (!arrowKeys.includes(event.key)) return;
     
     event.preventDefault();
     
-    // Get only non-folder files for navigation
-    const selectableFiles = files.filter(f => !f.is_folder);
+    // Use all files, including folders
+    const selectableFiles = files;
     if (selectableFiles.length === 0) return;
     
-    const currentIndex = selectableFiles.findIndex(f => f.id === fileToShow?.id);
-    if (currentIndex === -1) return;
+    const currentIndex = fileToShow 
+      ? selectableFiles.findIndex(f => f.id === fileToShow?.id)
+      : -1;
     
     // Calculate grid columns by checking the grid element
     const gridElement = document.getElementById('files-grid');
     let columns = 1;
-    if (gridElement) {
+    if (gridElement && viewMode === 'grid') {
       const gridStyle = window.getComputedStyle(gridElement);
       const gridTemplateColumns = gridStyle.getPropertyValue('grid-template-columns');
       columns = gridTemplateColumns.split(' ').length;
@@ -353,22 +392,27 @@
     
     let newIndex = currentIndex;
     
-    switch (event.key) {
-      case 'ArrowLeft':
-        newIndex = Math.max(0, currentIndex - 1);
-        break;
-      case 'ArrowRight':
-        newIndex = Math.min(selectableFiles.length - 1, currentIndex + 1);
-        break;
-      case 'ArrowUp':
-        newIndex = Math.max(0, currentIndex - columns);
-        break;
-      case 'ArrowDown':
-        newIndex = Math.min(selectableFiles.length - 1, currentIndex + columns);
-        break;
+    // If no file is selected, select the first one on any arrow key
+    if (currentIndex === -1) {
+      newIndex = 0;
+    } else {
+      switch (event.key) {
+        case 'ArrowLeft':
+          newIndex = Math.max(0, currentIndex - 1);
+          break;
+        case 'ArrowRight':
+          newIndex = Math.min(selectableFiles.length - 1, currentIndex + 1);
+          break;
+        case 'ArrowUp':
+          newIndex = Math.max(0, currentIndex - columns);
+          break;
+        case 'ArrowDown':
+          newIndex = Math.min(selectableFiles.length - 1, currentIndex + columns);
+          break;
+      }
     }
     
-    if (newIndex !== currentIndex && selectableFiles[newIndex]) {
+    if (selectableFiles[newIndex]) {
       fileToShow = selectableFiles[newIndex];
       
       // Scroll the selected card into view
@@ -481,9 +525,16 @@
       onInfo={openFileDetails}
       onPreview={previewFile}
       selectedFileId={fileToShow?.id}
+      onToggleFavorite={handleToggleFavorite}
+      {favoriteIds}
     />
   {:else}
-    <FileList {files} onFileClick={handleItemClick} />
+    <FileList
+      {files}
+      onFileClick={handleItemClick}
+      onToggleFavorite={handleToggleFavorite}
+      {favoriteIds}
+    />
   {/if}
 </div>
 

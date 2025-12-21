@@ -2,7 +2,7 @@
   import type { FileItem } from "$lib/queries";
   import FileIcon from "./FileIcon.svelte";
   import { formatSize } from "$lib/utils";
-  import { Download, Trash2, Info, Eye } from "lucide-svelte";
+  import { Download, Trash2, Info, Eye, Heart } from "lucide-svelte";
   import { Button } from "./ui/button";
   import { Card, CardContent } from "./ui/card";
   import { fade } from "svelte/transition";
@@ -16,6 +16,8 @@
     onInfo,
     onPreview,
     selectedFileId,
+    onToggleFavorite,
+    favoriteIds = new Set(),
   }: {
     files: FileItem[];
     onFileClick: (file: FileItem) => void;
@@ -24,6 +26,8 @@
     onInfo?: (file: FileItem) => void;
     onPreview?: (file: FileItem) => void;
     selectedFileId?: string | null;
+    onToggleFavorite?: (file: FileItem) => void;
+    favoriteIds?: Set<string>;
   } = $props();
 
   let hoveredFileId = $state<string | null>(null);
@@ -46,7 +50,31 @@
   {#each files as file (file.id)}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div data-file-id={file.id}>
+    <div data-file-id={file.id} class="relative group">
+      <!-- Heart icon for favorites -->
+      {#if onToggleFavorite}
+        <Button
+          variant="outline"
+          size="icon"
+          class={cn(
+            "absolute -top-2 -right-2 h-8 w-8 z-20 rounded-full shadow-md bg-background transition-all duration-200",
+            favoriteIds.has(file.id)
+              ? "text-red-500 border-red-200 dark:border-red-900"
+              : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-red-500 hover:scale-110"
+          )}
+          onclick={(e) => {
+            e.stopPropagation();
+            onToggleFavorite(file);
+          }}
+          title={favoriteIds.has(file.id) ? "Remove from favorites" : "Add to favorites"}
+        >
+          <Heart
+            size={16}
+            fill={favoriteIds.has(file.id) ? "currentColor" : "none"}
+          />
+        </Button>
+      {/if}
+
       <Card
         class={cn(
           "group relative flex cursor-pointer flex-col items-center transition-all overflow-hidden",
@@ -62,7 +90,7 @@
           hoveredFileId = null;
         }}
       >
-      <CardContent class="flex flex-col items-center p-5 w-full min-w-0">
+      <CardContent class="flex flex-col items-center p-5 w-full min-w-0 relative">
         <div
           class={cn(
             "mb-2.5 relative flex h-[70px] w-[100px] items-center justify-center rounded-lg shrink-0",
