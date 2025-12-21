@@ -6,10 +6,8 @@
 
   let {
     currentFolderId,
-    onNavigate,
   }: {
     currentFolderId: string | null;
-    onNavigate: (id: string | null) => void;
   } = $props();
 
   interface BreadcrumbItem {
@@ -57,6 +55,11 @@
       isLoading = false;
     }
   }
+
+  // Generate the href for a breadcrumb item
+  function getBreadcrumbHref(id: string | null): string {
+    return id ? `/files/${id}` : "/files";
+  }
 </script>
 
 <Breadcrumb.Root>
@@ -68,13 +71,7 @@
           {$t("breadcrumb.home") || "Home"}
         </Breadcrumb.Page>
       {:else}
-        <Breadcrumb.Link
-          href="#"
-          onclick={(e: MouseEvent) => {
-            e.preventDefault();
-            onNavigate(null);
-          }}
-        >
+        <Breadcrumb.Link href="/files">
           {$t("breadcrumb.home") || "Home"}
         </Breadcrumb.Link>
       {/if}
@@ -94,13 +91,7 @@
             <!-- Last item (current folder) is not a link -->
             <Breadcrumb.Page>{item.name}</Breadcrumb.Page>
           {:else}
-            <Breadcrumb.Link
-              href="#"
-              onclick={(e: MouseEvent) => {
-                e.preventDefault();
-                onNavigate(item.id);
-              }}
-            >
+            <Breadcrumb.Link href={getBreadcrumbHref(item.id)}>
               {item.name}
             </Breadcrumb.Link>
           {/if}

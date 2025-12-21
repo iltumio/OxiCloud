@@ -25,6 +25,13 @@
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   }
+
+  // Check if files route is active (including subpaths like /files/abc123)
+  let isFilesActive = $derived(
+    $page.url.pathname === "/files" || 
+    $page.url.pathname.startsWith("/files/") ||
+    $page.url.pathname === "/"
+  );
 </script>
 
 <aside class="flex h-full w-[250px] shrink-0 flex-col border-r bg-card">
@@ -43,10 +50,10 @@
 
   <nav class="flex grow flex-col px-4">
     <a
-      href="/"
+      href="/files"
       class={cn(
         "mb-1 flex cursor-pointer items-center rounded-lg px-4 py-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
-        $page.url.pathname === "/" ? "bg-accent text-accent-foreground" : "text-muted-foreground"
+        isFilesActive ? "bg-accent text-accent-foreground" : "text-muted-foreground"
       )}
     >
       <Folder size={18} class="mr-3" />

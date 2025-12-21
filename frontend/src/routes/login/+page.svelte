@@ -21,7 +21,7 @@
         isLoading = false;
 
         if (success) {
-            goto('/');
+            goto('/files');
         } else {
             const unsubscribe = auth.subscribe(state => {
                 if (state.error) error = state.error;
