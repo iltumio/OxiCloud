@@ -108,7 +108,7 @@ impl ContactGroupRepository for ContactGroupPgRepository {
         .await
         .map_err(|e| DomainError::database_error(format!("Failed to get contact group: {}", e)))?;
         
-        if let Some(row) = row_opt {
+        if let Some(_row) = row_opt {
             // En una implementación real, construiríamos un objeto ContactGroup a partir de la fila
             // Para esta demostración, devolvemos un grupo predeterminado con el ID correcto
             let mut group = ContactGroup::default();
@@ -189,7 +189,7 @@ impl ContactGroupRepository for ContactGroupPgRepository {
         Ok(())
     }
 
-    async fn get_contacts_in_group(&self, group_id: &Uuid) -> ContactRepositoryResult<Vec<Contact>> {
+    async fn get_contacts_in_group(&self, _group_id: &Uuid) -> ContactRepositoryResult<Vec<Contact>> {
         // En lugar de implementar toda la lógica compleja que requiere query!, simplificamos
         // Devolvemos una lista vacía por simplicidad para evitar el uso de macros SQLx
         

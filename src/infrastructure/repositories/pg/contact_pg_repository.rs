@@ -1,12 +1,12 @@
 use async_trait::async_trait;
 use chrono::Utc;
-use sqlx::{PgPool, query, query_as, types::Uuid};
+use sqlx::{PgPool, types::Uuid};
 use std::sync::Arc;
 use serde_json::Value as JsonValue;
 
 use crate::domain::entities::contact::{Contact, ContactGroup};
 use crate::domain::repositories::contact_repository::{ContactRepository, ContactGroupRepository, ContactRepositoryResult};
-use crate::common::errors::{DomainError, ErrorContext};
+use crate::common::errors::DomainError;
 
 pub struct ContactPgRepository {
     pool: Arc<PgPool>,
@@ -26,7 +26,7 @@ impl ContactRepository for ContactPgRepository {
         let phone_json = serde_json::to_value(&contact.phone).unwrap_or(JsonValue::Null);
         let address_json = serde_json::to_value(&contact.address).unwrap_or(JsonValue::Null);
         
-        let row = sqlx::query(
+        let _row = sqlx::query(
             r#"
             INSERT INTO carddav.contacts (
                 id, address_book_id, uid, full_name, first_name, last_name, nickname,
@@ -83,7 +83,7 @@ impl ContactRepository for ContactPgRepository {
         let mut updated_contact = contact.clone();
         updated_contact.updated_at = now;
         
-        let row = sqlx::query(
+        let _row = sqlx::query(
             r#"
             UPDATE carddav.contacts
             SET 

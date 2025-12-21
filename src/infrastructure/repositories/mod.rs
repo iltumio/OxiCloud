@@ -11,6 +11,10 @@ pub mod trash_fs_repository;
 pub mod file_fs_repository_trash;
 pub mod folder_fs_repository_trash;
 pub mod share_fs_repository;
+pub mod blob_storage_repository;
+pub mod folder_db_repository;
+pub mod file_db_repository;
+pub mod db_storage_mediator;
 
 // Repositorios PostgreSQL
 pub mod pg;

@@ -139,6 +139,20 @@ export async function fetchShared(): Promise<FileItem[]> {
   }));
 }
 
+export async function addToFavorites(itemId: string, itemType: "file" | "folder"): Promise<void> {
+  const { error } = await client.post({
+    url: `/favorites/${itemType}/${itemId}`,
+  });
+  if (error) throw error;
+}
+
+export async function removeFromFavorites(itemId: string, itemType: "file" | "folder"): Promise<void> {
+  const { error } = await client.delete({
+    url: `/favorites/${itemType}/${itemId}`,
+  });
+  if (error) throw error;
+}
+
 /* --- Query Creators --- */
 
 export const createUserQuery = () =>

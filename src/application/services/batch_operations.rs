@@ -2,7 +2,7 @@ use std::sync::Arc;
 use thiserror::Error;
 use futures::{future::join_all, Future};
 use tokio::sync::Semaphore;
-use tracing::{info, error};
+use tracing::info;
 
 use crate::application::services::file_service::FileService;
 use crate::application::services::folder_service::FolderService;

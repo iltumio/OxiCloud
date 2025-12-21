@@ -35,7 +35,6 @@ use crate::interfaces::api::handlers::i18n_handler::I18nHandler;
 use crate::interfaces::api::handlers::batch_handler::{
     self, BatchHandlerState
 };
-use crate::application::dtos::pagination::PaginationRequestDto;
 
 /// Creates API routes for the application
 pub fn create_api_routes(

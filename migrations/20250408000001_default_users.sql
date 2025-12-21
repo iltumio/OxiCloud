@@ -16,7 +16,7 @@ BEGIN
             '00000000-0000-0000-0000-000000000000',
             'admin',
             'admin@oxicloud.local',
-            '$argon2id$v=19$m=19456,t=2,p=1$izAsgdRc6sz8JVskBvjoag$vqwGHuK8ubEwYU1kqHlKeOa9HYqGn5L2jE8x1GNPja8', -- Admin123!
+            '$argon2id$v=19$m=65536,t=3,p=4$c2FsdHNhbHRzYWx0c2FsdA$H3VxE8LL2qPT31DM3loTg6D+O4MSc2sD7GjlQ5h7Jkw', -- Admin123!
             'admin',
             107374182400  -- 100GB for admin
         );
