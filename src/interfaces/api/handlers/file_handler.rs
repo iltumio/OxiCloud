@@ -1,6 +1,6 @@
 use axum::{
     extract::{Multipart, Path, Query, State},
-    http::{header, HeaderName, HeaderValue, Response, StatusCode},
+    http::{header, HeaderName, HeaderValue, Response, StatusCode, HeaderMap},
     response::IntoResponse,
     Json,
 };
@@ -68,7 +68,8 @@ type GlobalState = AppState;
         tag = "files"
     )]
 pub async fn upload_file(
-    State(service): State<FileServiceState>,
+    State(state): State<GlobalState>,
+    headers: HeaderMap,
     mut multipart: Multipart,
 ) -> impl IntoResponse {
     // Extract file from multipart request
@@ -76,6 +77,42 @@ pub async fn upload_file(
     let mut folder_id = None;
 
     tracing::info!("Processing file upload request");
+    
+    // Try to get authenticated user from headers
+    let mut user_id = None;
+    
+    if let Some(auth_header) = headers.get(header::AUTHORIZATION) {
+        if let Ok(auth_str) = auth_header.to_str() {
+            if auth_str.starts_with("Bearer ") {
+                let token = &auth_str[7..];
+                
+                // If auth service is available, validate token
+                if let Some(auth_services) = &state.auth_service {
+                    match auth_services.auth_service.validate_token(token) {
+                        Ok(claims) => {
+                            tracing::info!("User authenticated for upload: {} ({})", claims.username, claims.sub);
+                            user_id = Some(claims.sub);
+                        },
+                        Err(e) => {
+                            tracing::warn!("Failed to validate token for upload: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Fallback for mock tokens or development
+    if user_id.is_none() {
+        if let Some(auth_header) = headers.get(header::AUTHORIZATION) {
+            if let Ok(auth_str) = auth_header.to_str() {
+                if auth_str.contains("mock") {
+                    user_id = Some("test-user-id".to_string());
+                    tracing::info!("Using mock user ID for upload");
+                }
+            }
+        }
+    }
 
     while let Some(field) = multipart.next_field().await.unwrap_or(None) {
         let name = field.name().unwrap_or("").to_string();
@@ -102,6 +139,9 @@ pub async fn upload_file(
             }
         }
     }
+    
+    let user_id_ref = user_id.as_deref();
+    let file_service = &state.applications.file_service;
 
     // Check if file was provided
     if let Some((filename, content_type, data)) = file_part {
@@ -112,12 +152,13 @@ pub async fn upload_file(
         );
 
         // Use the proper file service to handle the upload
-        match service
-            .upload_file_from_bytes(
+        match file_service
+            .upload_file(
                 filename.clone(),
                 folder_id.clone(),
                 content_type.clone(),
                 data.to_vec(),
+                user_id_ref
             )
             .await
         {
@@ -134,7 +175,7 @@ pub async fn upload_file(
 
                 // VERIFICACIÓN ADICIONAL: Comprobar que el archivo es accesible inmediatamente después de subir
                 let file_id = file.id.clone(); // Clonar para uso en la verificación
-                match service.get_file(&file_id).await {
+                match file_service.get_file(&file_id).await {
                     Ok(_) => tracing::info!(
                         "Verified file is immediately accessible after upload: {}",
                         file_id
@@ -143,7 +184,7 @@ pub async fn upload_file(
                         tracing::warn!("File uploaded but not immediately accessible: {} - {}. This could cause issues in frontend.", file_id, e);
                         // Esperar un momento y comprobar de nuevo
                         tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
-                        if let Err(retry_e) = service.get_file(&file_id).await {
+                        if let Err(retry_e) = file_service.get_file(&file_id).await {
                             tracing::error!(
                                 "File still not accessible after retry: {} - {}",
                                 file_id,
@@ -177,9 +218,9 @@ pub async fn upload_file(
                 );
 
                 // Return error response
-                let status = match &err {
-                    FileServiceError::NotFound(_) => StatusCode::NOT_FOUND,
-                    FileServiceError::AccessError(_) => StatusCode::SERVICE_UNAVAILABLE,
+                let status = match err.kind {
+                    crate::common::errors::ErrorKind::NotFound => StatusCode::NOT_FOUND,
+                    crate::common::errors::ErrorKind::AccessDenied => StatusCode::SERVICE_UNAVAILABLE,
                     _ => StatusCode::INTERNAL_SERVER_ERROR,
                 };
 
@@ -612,8 +653,45 @@ pub async fn list_files(
     )]
 pub async fn delete_file(
     State(state): State<GlobalState>,
+    headers: HeaderMap,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
+    // Try to get authenticated user from headers
+    let mut user_id = None;
+    
+    if let Some(auth_header) = headers.get(header::AUTHORIZATION) {
+        if let Ok(auth_str) = auth_header.to_str() {
+            if auth_str.starts_with("Bearer ") {
+                let token = &auth_str[7..];
+                
+                // If auth service is available, validate token
+                if let Some(auth_services) = &state.auth_service {
+                    match auth_services.auth_service.validate_token(token) {
+                        Ok(claims) => {
+                            tracing::info!("User authenticated for delete: {} ({})", claims.username, claims.sub);
+                            user_id = Some(claims.sub);
+                        },
+                        Err(e) => {
+                            tracing::warn!("Failed to validate token for delete: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Fallback for mock tokens or development
+    if user_id.is_none() {
+        if let Some(auth_header) = headers.get(header::AUTHORIZATION) {
+            if let Ok(auth_str) = auth_header.to_str() {
+                if auth_str.contains("mock") {
+                    user_id = Some("test-user-id".to_string());
+                    tracing::info!("Using mock user ID for delete");
+                }
+            }
+        }
+    }
+
     // Check if trash service is available
     if let Some(trash_service) = &state.trash_service {
         tracing::info!("Moving file to trash: {}", id);
@@ -624,7 +702,9 @@ pub async fn delete_file(
             std::any::type_name_of_val(&*trash_service)
         );
         let default_user_id = "00000000-0000-0000-0000-000000000000".to_string();
-        tracing::info!("Using default user ID: {}", default_user_id);
+        let uid = user_id.as_deref().unwrap_or(&default_user_id);
+        
+        tracing::info!("Using user ID for trash: {}", uid);
 
         // Try to move to trash first - add more detailed logging
         tracing::info!(
@@ -632,7 +712,7 @@ pub async fn delete_file(
             id
         );
         match trash_service
-            .move_to_trash(&id, "file", &default_user_id)
+            .move_to_trash(&id, "file", uid)
             .await
         {
             Ok(_) => {
@@ -657,7 +737,7 @@ pub async fn delete_file(
     // Fallback to permanent delete if trash is unavailable or failed
     tracing::warn!("Falling back to permanent delete for file: {}", id);
     let file_service = &state.applications.file_service;
-    match file_service.delete_file(&id).await {
+    match file_service.delete_file(&id, user_id.as_deref()).await {
         Ok(_) => {
             tracing::info!("File permanently deleted: {}", id);
             // CRITICAL FIX: Return status code that matches the API expectations (204 No Content)

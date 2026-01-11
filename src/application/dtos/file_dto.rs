@@ -20,6 +20,9 @@ pub struct FileDto {
     /// MIME type
     pub mime_type: String,
 
+    /// Content Identifier (CID)
+    pub cid: Option<String>,
+
     /// Parent folder ID
     pub folder_id: Option<String>,
 
@@ -38,6 +41,7 @@ impl From<File> for FileDto {
             path: file.path_string().to_string(),
             size: file.size(),
             mime_type: file.mime_type().to_string(),
+            cid: file.cid().map(String::from),
             folder_id: file.folder_id().map(String::from),
             created_at: file.created_at(),
             modified_at: file.modified_at(),
@@ -57,6 +61,7 @@ impl From<FileDto> for File {
             dto.path,
             dto.size,
             dto.mime_type,
+            dto.cid,
             dto.folder_id,
             dto.created_at,
             dto.modified_at,
@@ -73,6 +78,7 @@ impl FileDto {
             path: "/stub/path".to_string(),
             size: 0,
             mime_type: "application/octet-stream".to_string(),
+            cid: None,
             folder_id: None,
             created_at: 0,
             modified_at: 0,

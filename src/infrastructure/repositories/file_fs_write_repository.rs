@@ -91,6 +91,7 @@ impl FileFsWriteRepository {
                 storage_path, 
                 size, 
                 mime_type, 
+                None, // CID not supported in FS repo
                 folder_id,
                 created,
                 modified,
@@ -103,6 +104,7 @@ impl FileFsWriteRepository {
                 storage_path, 
                 size, 
                 mime_type, 
+                None, // CID not supported in FS repo
                 folder_id,
             )
             .map_err(|e| crate::domain::repositories::file_repository::FileRepositoryError::Other(e.to_string()))

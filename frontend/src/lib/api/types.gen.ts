@@ -23,6 +23,10 @@ export type CreateFolderDto = {
  */
 export type FileDto = {
     /**
+     * Content Identifier (CID)
+     */
+    cid?: string | null;
+    /**
      * Creation timestamp
      */
     created_at: number;

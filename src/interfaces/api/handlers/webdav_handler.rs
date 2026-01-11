@@ -680,7 +680,7 @@ async fn handle_delete(
             AppError::not_found(format!("Resource not found: {}", path))
         })?;
         
-        file_service.delete_file(&file.id).await.map_err(|e| {
+        file_service.delete_file(&file.id, None).await.map_err(|e| {
             AppError::internal_error(format!("Failed to delete file: {}", e))
         })?;
     }

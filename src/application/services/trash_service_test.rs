@@ -103,13 +103,13 @@ impl MockFileRepository {
 
     fn add_test_file(&self, id: &str, name: &str, path: &str) {
         let file = File::new(
-            Uuid::parse_str(id).unwrap(),
+            Uuid::parse_str(id).unwrap().to_string(),
             name.to_string(),
-            path.to_string(),
-            "text/plain".to_string(),
+            crate::domain::services::path_service::StoragePath::from_string(path),
             100,
-            Uuid::new_v4(),
-            None,
+            "text/plain".to_string(),
+            None, // CID
+            Some(Uuid::new_v4().to_string()),
         ).unwrap();
         
         let mut files = self.files.lock().unwrap();

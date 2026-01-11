@@ -49,7 +49,7 @@
         "tags": [
           "files"
         ],
-        "summary": "\n * API handler for file-related operations.\n * \n * The FileHandler is responsible for processing HTTP requests related to file operations.\n * It handles:\n * \n * 1. File uploads through multipart form data\n * 2. File downloads with optional compression\n * 3. Listing files in folders\n * 4. Moving files between folders\n * 5. Deleting files (with trash integration)\n * \n * This component acts as an adapter in the hexagonal architecture, translating\n * between HTTP requests/responses and application service calls. It handles\n * HTTP-specific concerns like status codes, headers, and request parsing while\n * delegating business logic to the application services.\n Uploads a file",
+        "summary": "\n * API handler for file-related operations.\n *\n * The FileHandler is responsible for processing HTTP requests related to file operations.\n * It handles:\n *\n * 1. File uploads through multipart form data\n * 2. File downloads with optional compression\n * 3. Listing files in folders\n * 4. Moving files between folders\n * 5. Deleting files (with trash integration)\n *\n * This component acts as an adapter in the hexagonal architecture, translating\n * between HTTP requests/responses and application service calls. It handles\n * HTTP-specific concerns like status codes, headers, and request parsing while\n * delegating business logic to the application services.\n Uploads a file",
         "operationId": "upload_file",
         "requestBody": {
           "content": {
@@ -598,6 +598,13 @@
           "modified_at"
         ],
         "properties": {
+          "cid": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Content Identifier (CID)"
+          },
           "created_at": {
             "type": "integer",
             "format": "int64",

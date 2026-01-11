@@ -58,6 +58,9 @@ pub struct File {
     /// MIME type of the file (e.g., "text/plain", "image/jpeg")
     mime_type: String,
     
+    /// Content Identifier (CID) / Multihash of the file content
+    cid: Option<String>,
+    
     /// Parent folder ID if the file is within a folder, None if in root
     folder_id: Option<String>,
     
@@ -79,6 +82,7 @@ impl Default for File {
             path_string: "/".to_string(),
             size: 0,
             mime_type: "application/octet-stream".to_string(),
+            cid: None,
             folder_id: None,
             created_at: 0,
             modified_at: 0,
@@ -94,6 +98,7 @@ impl File {
         storage_path: StoragePath,
         size: u64,
         mime_type: String,
+        cid: Option<String>,
         folder_id: Option<String>,
     ) -> FileResult<Self> {
         // Validate file name
@@ -116,6 +121,7 @@ impl File {
             path_string,
             size,
             mime_type,
+            cid,
             folder_id,
             created_at: now,
             modified_at: now,
@@ -146,6 +152,7 @@ impl File {
             path_string,
             size: 0, // Folders have zero size
             mime_type: "directory".to_string(), // Standard MIME type for directories
+            cid: None,
             folder_id: parent_id,
             created_at,
             modified_at,
@@ -159,6 +166,7 @@ impl File {
         storage_path: StoragePath,
         size: u64,
         mime_type: String,
+        cid: Option<String>,
         folder_id: Option<String>,
         created_at: u64,
         modified_at: u64,
@@ -178,6 +186,7 @@ impl File {
             path_string,
             size,
             mime_type,
+            cid,
             folder_id,
             created_at,
             modified_at,
@@ -209,6 +218,10 @@ impl File {
         &self.mime_type
     }
     
+    pub fn cid(&self) -> Option<&str> {
+        self.cid.as_deref()
+    }
+    
     pub fn folder_id(&self) -> Option<&str> {
         self.folder_id.as_deref()
     }
@@ -229,6 +242,7 @@ impl File {
         path: String,
         size: u64,
         mime_type: String,
+        cid: Option<String>,
         folder_id: Option<String>,
         created_at: u64,
         modified_at: u64,
@@ -244,6 +258,7 @@ impl File {
             path_string: path,
             size,
             mime_type,
+            cid,
             folder_id,
             created_at,
             modified_at,
@@ -282,6 +297,7 @@ impl File {
             path_string: new_path_string,
             size: self.size,
             mime_type: self.mime_type.clone(),
+            cid: self.cid.clone(),
             folder_id: self.folder_id.clone(),
             created_at: self.created_at,
             modified_at: now,
@@ -311,6 +327,7 @@ impl File {
             path_string: new_path_string,
             size: self.size,
             mime_type: self.mime_type.clone(),
+            cid: self.cid.clone(),
             folder_id,
             created_at: self.created_at,
             modified_at: now,
@@ -332,6 +349,7 @@ impl File {
             path_string: self.path_string.clone(),
             size: new_size,
             mime_type: self.mime_type.clone(),
+            cid: self.cid.clone(),
             folder_id: self.folder_id.clone(),
             created_at: self.created_at,
             modified_at: now,
@@ -352,6 +370,7 @@ mod tests {
             storage_path,
             100,
             "text/plain".to_string(),
+            None, // CID
             None,
         );
         
@@ -367,6 +386,7 @@ mod tests {
             storage_path,
             100,
             "text/plain".to_string(),
+            None, // CID
             None,
         );
         
@@ -386,6 +406,7 @@ mod tests {
             storage_path,
             100,
             "text/plain".to_string(),
+            None, // CID
             None,
         ).unwrap();
         

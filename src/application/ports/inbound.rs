@@ -18,6 +18,7 @@ pub trait FileUseCase: Send + Sync + 'static {
         folder_id: Option<String>,
         content_type: String,
         content: Vec<u8>,
+        user_id: Option<&str>,
     ) -> Result<FileDto, DomainError>;
     
     /// Obtiene un archivo por su ID
@@ -36,7 +37,7 @@ pub trait FileUseCase: Send + Sync + 'static {
     async fn list_files(&self, folder_id: Option<&str>) -> Result<Vec<FileDto>, DomainError>;
     
     /// Elimina un archivo
-    async fn delete_file(&self, id: &str) -> Result<(), DomainError>;
+    async fn delete_file(&self, id: &str, user_id: Option<&str>) -> Result<(), DomainError>;
     
     /// Obtiene contenido de archivo como bytes (para archivos pequeños)
     async fn get_file_content(&self, id: &str) -> Result<Vec<u8>, DomainError>;

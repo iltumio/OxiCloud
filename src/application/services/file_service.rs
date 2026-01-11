@@ -6,6 +6,7 @@ use crate::domain::repositories::file_repository::FileRepositoryError;
 use crate::application::dtos::file_dto::FileDto;
 use crate::application::ports::inbound::FileUseCase;
 use crate::application::ports::outbound::FileStoragePort;
+use crate::application::ports::storage_ports::StorageUsagePort;
 use crate::common::errors::DomainError;
 use futures::Stream;
 use bytes::Bytes;
@@ -112,12 +113,23 @@ pub type FileServiceResult<T> = Result<T, FileServiceError>;
 pub struct FileService {
     /// Repository responsible for file storage operations
     file_repository: Arc<dyn FileStoragePort>,
+    /// Service for updating storage usage statistics
+    storage_usage_service: Option<Arc<dyn StorageUsagePort>>,
 }
 
 impl FileService {
     /// Creates a new file service
     pub fn new(file_repository: Arc<dyn FileStoragePort>) -> Self {
-        Self { file_repository }
+        Self { 
+            file_repository,
+            storage_usage_service: None,
+        }
+    }
+
+    /// Adds a storage usage service to the file service
+    pub fn with_storage_usage_service(mut self, storage_usage_service: Arc<dyn StorageUsagePort>) -> Self {
+        self.storage_usage_service = Some(storage_usage_service);
+        self
     }
     
     /// Creates a stub implementation for testing and middleware
@@ -132,6 +144,7 @@ impl FileService {
                 _folder_id: Option<String>,
                 _content_type: String,
                 _content: Vec<u8>,
+                _user_id: Option<&str>,
             ) -> Result<FileDto, DomainError> {
                 Ok(FileDto::empty())
             }
@@ -156,7 +169,7 @@ impl FileService {
                 Ok(vec![])
             }
             
-            async fn delete_file(&self, _id: &str) -> Result<(), DomainError> {
+            async fn delete_file(&self, _id: &str, _user_id: Option<&str>) -> Result<(), DomainError> {
                 Ok(())
             }
             
@@ -184,10 +197,25 @@ impl FileService {
         folder_id: Option<String>,
         content_type: String,
         content: Vec<u8>,
+        user_id: Option<&str>,
     ) -> FileServiceResult<FileDto>
     {
         let file = self.file_repository.save_file(name, folder_id, content_type, content).await
             .map_err(FileServiceError::from)?;
+            
+        // Update storage usage if user_id is provided and service is available
+        if let (Some(uid), Some(storage_service)) = (user_id, &self.storage_usage_service) {
+            let uid = uid.to_string();
+            let storage_service = Arc::clone(storage_service);
+            
+            // Run in background to avoid blocking
+            tokio::spawn(async move {
+                if let Err(e) = storage_service.update_user_storage_usage(&uid).await {
+                    tracing::error!("Failed to update storage usage for user {}: {}", uid, e);
+                }
+            });
+        }
+            
         Ok(FileDto::from(file))
     }
     
@@ -276,9 +304,24 @@ impl FileService {
     }
     
     /// Deletes a file
-    pub async fn delete_file(&self, id: &str) -> FileServiceResult<()> {
+    pub async fn delete_file(&self, id: &str, user_id: Option<&str>) -> FileServiceResult<()> {
         self.file_repository.delete_file(id).await
-            .map_err(FileServiceError::from)
+            .map_err(FileServiceError::from)?;
+            
+        // Update storage usage if user_id is provided and service is available
+        if let (Some(uid), Some(storage_service)) = (user_id, &self.storage_usage_service) {
+            let uid = uid.to_string();
+            let storage_service = Arc::clone(storage_service);
+            
+            // Run in background to avoid blocking
+            tokio::spawn(async move {
+                if let Err(e) = storage_service.update_user_storage_usage(&uid).await {
+                    tracing::error!("Failed to update storage usage for user {}: {}", uid, e);
+                }
+            });
+        }
+            
+        Ok(())
     }
     
     /// Gets file content as bytes - use for small files only
@@ -319,8 +362,9 @@ impl FileUseCase for FileService {
         folder_id: Option<String>,
         content_type: String,
         content: Vec<u8>,
+        user_id: Option<&str>,
     ) -> Result<FileDto, DomainError> {
-        FileService::upload_file_from_bytes(self, name, folder_id, content_type, content).await
+        FileService::upload_file_from_bytes(self, name, folder_id, content_type, content, user_id).await
             .map_err(DomainError::from)
     }
     
@@ -349,8 +393,8 @@ impl FileUseCase for FileService {
             .map_err(DomainError::from)
     }
     
-    async fn delete_file(&self, id: &str) -> Result<(), DomainError> {
-        FileService::delete_file(self, id).await
+    async fn delete_file(&self, id: &str, user_id: Option<&str>) -> Result<(), DomainError> {
+        FileService::delete_file(self, id, user_id).await
             .map_err(DomainError::from)
     }
     

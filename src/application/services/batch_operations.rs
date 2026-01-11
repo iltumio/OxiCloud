@@ -309,7 +309,7 @@ impl BatchOperationService {
                 // Adquirir permiso del semáforo
                 let permit = semaphore.acquire().await.unwrap();
                 
-                let delete_result = file_service.delete_file(&file_id).await;
+                let delete_result = file_service.delete_file(&file_id, None).await;
                 
                 // Liberar el permiso explícitamente
                 drop(permit);

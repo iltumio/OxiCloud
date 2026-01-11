@@ -362,12 +362,10 @@ mod tests {
                 let file = crate::domain::entities::file::File::new(
                     id.to_string(),
                     "test.txt".to_string(),
-                    "/path/to/test.txt".to_string(),
-                    "/test.txt".to_string(),
+                    crate::domain::services::path_service::StoragePath::from_string("/path/to/test.txt"),
                     123,
                     "text/plain".to_string(),
-                    None,
-                    None,
+                    None, // CID
                     None,
                 )
                 .unwrap();

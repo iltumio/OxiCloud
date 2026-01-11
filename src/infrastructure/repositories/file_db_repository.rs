@@ -174,11 +174,11 @@ impl FileDbRepository {
         };
 
         let query = if let Some(fid) = folder_uuid {
-            sqlx::query("SELECT id, name, folder_id, mime_type, size_bytes, created_at, modified_at FROM storage.files WHERE folder_id = $1 AND owner_id = $2")
+            sqlx::query("SELECT id, name, folder_id, mime_type, multihash, size_bytes, created_at, modified_at FROM storage.files WHERE folder_id = $1 AND owner_id = $2")
                 .bind(fid)
                 .bind(DEFAULT_USER_ID)
         } else {
-            sqlx::query("SELECT id, name, folder_id, mime_type, size_bytes, created_at, modified_at FROM storage.files WHERE folder_id IS NULL AND owner_id = $1")
+            sqlx::query("SELECT id, name, folder_id, mime_type, multihash, size_bytes, created_at, modified_at FROM storage.files WHERE folder_id IS NULL AND owner_id = $1")
                 .bind(DEFAULT_USER_ID)
         };
 
@@ -192,6 +192,7 @@ impl FileDbRepository {
             let name: String = row.get("name");
             let f_uuid: Option<Uuid> = row.get("folder_id");
             let mime_type: String = row.get("mime_type");
+            let multihash: Option<String> = row.get("multihash");
             let size: i64 = row.get("size_bytes");
             let created_at: DateTime<Utc> = row.get("created_at");
             let modified_at: DateTime<Utc> = row.get("modified_at");
@@ -204,6 +205,7 @@ impl FileDbRepository {
                 storage_path,
                 size as u64,
                 mime_type,
+                multihash,
                 f_uuid.map(|u| u.to_string()),
                 created_at.timestamp() as u64,
                 modified_at.timestamp() as u64,
@@ -262,7 +264,7 @@ impl FileDbRepository {
         };
 
         let row = sqlx::query(
-            "UPDATE storage.files SET folder_id = $1, modified_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING name, mime_type, size_bytes, created_at, modified_at"
+            "UPDATE storage.files SET folder_id = $1, modified_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING name, mime_type, multihash, size_bytes, created_at, modified_at"
         )
         .bind(target_uuid)
         .bind(uuid)
@@ -280,6 +282,7 @@ impl FileDbRepository {
 
         let name: String = row.get("name");
         let mime_type: String = row.get("mime_type");
+        let multihash: Option<String> = row.get("multihash");
         let size: i64 = row.get("size_bytes");
         let created_at: DateTime<Utc> = row.get("created_at");
         let modified_at: DateTime<Utc> = row.get("modified_at");
@@ -292,6 +295,7 @@ impl FileDbRepository {
             storage_path,
             size as u64,
             mime_type,
+            multihash,
             target_folder_id,
             created_at.timestamp() as u64,
             modified_at.timestamp() as u64,
@@ -412,6 +416,7 @@ impl FileRepository for FileDbRepository {
                     storage_path,
                     size,
                     content_type,
+                    Some(multihash),
                     folder_id,
                     created_at.timestamp() as u64,
                     modified_at.timestamp() as u64,
@@ -486,6 +491,7 @@ impl FileRepository for FileDbRepository {
                     storage_path,
                     size,
                     content_type,
+                    Some(multihash),
                     folder_id,
                     created_at.timestamp() as u64,
                     modified_at.timestamp() as u64,
@@ -502,7 +508,7 @@ impl FileRepository for FileDbRepository {
         let uuid = Uuid::from_str(id).map_err(|_| FileRepositoryError::NotFound(id.to_string()))?;
 
         let row = sqlx::query(
-            "SELECT name, folder_id, mime_type, size_bytes, created_at, modified_at FROM storage.files WHERE id = $1"
+            "SELECT name, folder_id, mime_type, multihash, size_bytes, created_at, modified_at FROM storage.files WHERE id = $1"
         )
         .bind(uuid)
         .fetch_optional(&self.pool)
@@ -514,6 +520,7 @@ impl FileRepository for FileDbRepository {
         let name: String = row.get("name");
         let folder_uuid: Option<Uuid> = row.get("folder_id");
         let mime_type: String = row.get("mime_type");
+        let multihash: Option<String> = row.get("multihash");
         let size: i64 = row.get("size_bytes");
         let created_at: DateTime<Utc> = row.get("created_at");
         let modified_at: DateTime<Utc> = row.get("modified_at");
@@ -526,6 +533,7 @@ impl FileRepository for FileDbRepository {
             storage_path,
             size as u64,
             mime_type,
+            multihash,
             folder_uuid.map(|u| u.to_string()),
             created_at.timestamp() as u64,
             modified_at.timestamp() as u64,

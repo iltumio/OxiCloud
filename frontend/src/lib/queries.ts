@@ -15,6 +15,7 @@ export interface FileItem {
   type?: string;
   mime_type?: string;
   extension?: string;
+  cid?: string | null;
 }
 
 export const queryKeys = {
@@ -78,6 +79,7 @@ export async function fetchContent(
     updated_at: f.modified_at || f.created_at,
     type: f.mime_type,
     extension: f.name.split(".").pop(),
+    cid: f.cid,
   }));
 
   return [...folderItems, ...fileItems];

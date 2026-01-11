@@ -27,6 +27,7 @@
       <Table.Row>
         <Table.Head>{$t("files.name")}</Table.Head>
         <Table.Head>{$t("files.type")}</Table.Head>
+        <Table.Head>CID</Table.Head>
         <Table.Head class="text-right">{$t("files.size")}</Table.Head>
         <Table.Head>{$t("files.modified")}</Table.Head>
       </Table.Row>
@@ -71,6 +72,15 @@
                 ? $t("files.file_types.folder")
                 : file.extension || "File"}
             </span>
+          </Table.Cell>
+          <Table.Cell>
+            {#if file.cid}
+              <span class="text-xs text-muted-foreground font-mono" title={file.cid}>
+                {file.cid.substring(0, 8)}...{file.cid.substring(file.cid.length - 8)}
+              </span>
+            {:else}
+              <span class="text-xs text-muted-foreground">-</span>
+            {/if}
           </Table.Cell>
           <Table.Cell class="text-right">
             <span class="text-sm text-muted-foreground">

@@ -60,6 +60,7 @@ impl FileFsReadRepository {
         storage_path: StoragePath,
         size: u64,
         mime_type: String,
+        cid: Option<String>,
         folder_id: Option<String>,
         created_at: Option<u64>,
         modified_at: Option<u64>,
@@ -72,6 +73,7 @@ impl FileFsReadRepository {
                 storage_path, 
                 size, 
                 mime_type, 
+                cid,
                 folder_id,
                 created,
                 modified,
@@ -84,6 +86,7 @@ impl FileFsReadRepository {
                 storage_path, 
                 size, 
                 mime_type, 
+                cid,
                 folder_id,
             )
             .map_err(|e| crate::domain::repositories::file_repository::FileRepositoryError::Other(e.to_string()))
@@ -142,6 +145,7 @@ impl FileFsReadRepository {
             storage_path,
             size,
             mime_type,
+            None, // CID not supported in FS repo
             folder_id,
             Some(created_at),
             Some(modified_at),

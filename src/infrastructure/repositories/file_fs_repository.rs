@@ -253,6 +253,7 @@ impl FileFsRepository {
                 storage_path, 
                 size, 
                 mime_type, 
+                None, // CID not supported in FS repo
                 folder_id,
                 created,
                 modified,
@@ -265,6 +266,7 @@ impl FileFsRepository {
                 storage_path, 
                 size, 
                 mime_type, 
+                None, // CID not supported in FS repo
                 folder_id,
             )
             .map_err(|e| FileRepositoryError::Other(e.to_string()))
@@ -1158,6 +1160,7 @@ impl FileRepository for FileFsRepository {
                             storage_path,
                             size,
                             mime_type,
+                            None, // CID not supported in FS repo
                             None, // No folder ID
                             created_at,
                             modified_at,
@@ -1269,6 +1272,7 @@ impl FileRepository for FileFsRepository {
                         file_storage_path,
                         size,
                         mime_type,
+                        None, // CID not supported in FS repo
                         folder_id.map(String::from),
                         created_at,
                         modified_at,

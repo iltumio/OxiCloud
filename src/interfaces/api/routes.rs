@@ -168,12 +168,16 @@ pub fn create_api_routes(
     // Merge the routers
     let folders_router = folders_basic_router.merge(folders_ops_router).merge(folder_zip_router);
         
-    // Create file routes for basic operations and trash-enabled delete
+    // Create file routes for basic operations (list, download) with file_service state
     let basic_file_router = Router::new()
         .route("/", get(file_handler::list_files))
-        .route("/upload", post(file_handler::upload_file))
         .route("/{id}", get(file_handler::download_file))
         .with_state(file_service.clone());
+
+    // Create file routes for operations that need AppState (upload)
+    let file_upload_router = Router::new()
+        .route("/upload", post(file_handler::upload_file))
+        .with_state(app_state.clone());
     
     // Let's create a router for file operations with trash support
     let file_operations_router = Router::new()
@@ -181,10 +185,11 @@ pub fn create_api_routes(
         // Uses the correct URL pattern
         .route("/{id}", delete(|
             State(state): State<AppState>, 
+            headers: axum::http::HeaderMap,
             Path(id): Path<String>
         | async move {
             tracing::info!("File delete route called explicitly for ID: {}", id);
-            file_handler::delete_file(State(state), Path(id)).await
+            file_handler::delete_file(State(state), headers, Path(id)).await
         }))
         .route("/{id}/move", put(|
             State(state): State<AppState>,
@@ -204,7 +209,7 @@ pub fn create_api_routes(
         }));
     
     // Merge the routers
-    let files_router = basic_file_router.merge(file_operations_router);
+    let files_router = basic_file_router.merge(file_upload_router).merge(file_operations_router);
     
     // Crear rutas para operaciones por lotes
     let batch_router = Router::new()

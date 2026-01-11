@@ -629,6 +629,7 @@ impl Default for AppState {
                 _folder_id: Option<String>,
                 _content_type: String,
                 _content: Vec<u8>,
+                _user_id: Option<&str>,
             ) -> Result<crate::application::dtos::file_dto::FileDto, crate::common::errors::DomainError> {
                 Ok(crate::application::dtos::file_dto::FileDto::default())
             }
@@ -653,7 +654,7 @@ impl Default for AppState {
                 Ok(Vec::new())
             }
             
-            async fn delete_file(&self, _id: &str) -> Result<(), crate::common::errors::DomainError> {
+            async fn delete_file(&self, _id: &str, _user_id: Option<&str>) -> Result<(), crate::common::errors::DomainError> {
                 Ok(())
             }
             

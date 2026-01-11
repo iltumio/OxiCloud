@@ -133,24 +133,6 @@ async fn main() -> anyhow::Result<()> {
     let buffer_pool = BufferPool::new(256 * 1024, 50, 120); // 256KB buffers, 50 max, 2 min TTL
     BufferPool::start_cleaner(buffer_pool.clone());
 
-    // Initialize application services
-    let folder_service = Arc::new(FolderService::new(folder_repository.clone()));
-    let file_service = Arc::new(FileService::new(file_repository.clone()));
-
-    // Initialize trash service if enabled
-    let trash_repository = if config.features.enable_trash {
-        // For now, we reuse FS repository logic or need a DB implementation
-        // Since we migrated to DB, FS trash won't work correctly for DB items without update.
-        // But for compiling, we keep it or disable it.
-        // Assuming disable for now or keep FS stub.
-        Some(Arc::new(TrashFsRepository::new(
-            storage_path.as_path(),
-            folder_id_mapping_service.clone(),
-        )))
-    } else {
-        None
-    };
-
     // Create adapters for repositories (using domain interfaces instead of ports)
     struct DomainFileRepoAdapter {
         repo: Arc<dyn application::ports::outbound::FileStoragePort>,
@@ -550,6 +532,37 @@ async fn main() -> anyhow::Result<()> {
     let file_repo_adapter = Arc::new(DomainFileRepoAdapter::new(file_repository.clone()));
     let folder_repo_adapter = Arc::new(DomainFolderRepoAdapter::new(folder_repository.clone()));
 
+    // Initialize storage usage service
+    let user_repository = Arc::new(infrastructure::repositories::pg::UserPgRepository::new(
+        db_pool.clone(),
+    ));
+
+    let storage_usage_service = Arc::new(
+        application::services::storage_usage_service::StorageUsageService::new(
+            file_repo_adapter.clone(),
+            user_repository,
+        ),
+    );
+
+    // Initialize application services
+    let folder_service = Arc::new(FolderService::new(folder_repository.clone()));
+    let file_service = Arc::new(FileService::new(file_repository.clone())
+        .with_storage_usage_service(storage_usage_service.clone()));
+
+    // Initialize trash service if enabled
+    let trash_repository = if config.features.enable_trash {
+        // For now, we reuse FS repository logic or need a DB implementation
+        // Since we migrated to DB, FS trash won't work correctly for DB items without update.
+        // But for compiling, we keep it or disable it.
+        // Assuming disable for now or keep FS stub.
+        Some(Arc::new(TrashFsRepository::new(
+            storage_path.as_path(),
+            folder_id_mapping_service.clone(),
+        )))
+    } else {
+        None
+    };
+
     // Create the trash service with properly typed adapters
     let trash_service = if let Some(ref trash_repo) = trash_repository {
         let service = Arc::new(TrashService::new(
@@ -787,7 +800,7 @@ async fn main() -> anyhow::Result<()> {
         recent_service: recent_service.clone(),
     };
 
-    let mut app_state = AppState {
+    let app_state = AppState {
         core: core_services,
         repositories: repository_services,
         applications: application_services,
@@ -797,23 +810,10 @@ async fn main() -> anyhow::Result<()> {
         share_service: share_service.clone(),
         favorites_service: favorites_service.clone(),
         recent_service: recent_service.clone(),
-        storage_usage_service: None,
+        storage_usage_service: Some(storage_usage_service.clone()),
         calendar_service: None,
         contact_service: contact_service.clone(),
     };
-
-    // Initialize storage usage service
-    let user_repository = Arc::new(infrastructure::repositories::pg::UserPgRepository::new(
-        db_pool.clone(),
-    ));
-
-    let service = Arc::new(
-        application::services::storage_usage_service::StorageUsageService::new(
-            file_repository.clone(),
-            user_repository,
-        ),
-    );
-    app_state = app_state.with_storage_usage_service(service.clone());
 
     // Wrap in Arc after all modifications
     let app_state = Arc::new(app_state);
