@@ -6,8 +6,9 @@
  * which dedupes the request and caches the list — touch this module directly
  * only when bypassing the cache is intentional (e.g. an explicit refresh).
  */
-import { apiFetch, apiJson } from '$lib/api/client';
-import { getCsrfHeaders } from '$lib/api/csrf';
+import { api } from '$lib/api';
+import { ensureData, throwFailed } from '$lib/api/http';
+import { apiQueryOptions } from '$lib/api/query';
 import type {
 	CreateDriveBody,
 	Drive,
@@ -18,11 +19,15 @@ import type {
 	DriveRole
 } from '$lib/api/types';
 
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
-
 /** `GET /api/drives` — every drive the caller can read, default first by convention. */
-export function listDrives(): Promise<Drive[]> {
-	return apiJson<Drive[]>('/api/drives', { credentials: 'same-origin' });
+export async function listDrives(): Promise<Drive[]> {
+	const { data, response } = await api.GET('/api/drives');
+	return ensureData(data, response, '/api/drives');
+}
+
+/** svelte-query options for {@link listDrives} (`createQuery(() => drivesListOptions())`). */
+export function drivesListOptions() {
+	return apiQueryOptions('get', '/api/drives');
 }
 
 /**
@@ -33,30 +38,17 @@ export function listDrives(): Promise<Drive[]> {
  * error body parsed where possible.
  */
 export async function createDrive(body: CreateDriveBody): Promise<Drive> {
-	const res = await apiFetch('/api/drives', {
-		method: 'POST',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		credentials: 'same-origin',
-		body: JSON.stringify(body)
-	});
-	if (!res.ok) {
-		let detail = '';
-		try {
-			const parsed = (await res.json()) as { error?: string; message?: string };
-			detail = parsed.error ?? parsed.message ?? '';
-		} catch {
-			/* response body wasn't JSON */
-		}
-		throw new Error(detail || `create drive failed: ${res.status}`);
-	}
-	return (await res.json()) as Drive;
+	const { data, error, response } = await api.POST('/api/drives', { body });
+	if (!response.ok || !data) throwFailed('create drive', response, error);
+	return data;
 }
 
 /** `GET /api/drives/{id}/members` — every role grant on the drive. */
-export function listDriveMembers(driveId: string): Promise<DriveMember[]> {
-	return apiJson<DriveMember[]>(`/api/drives/${encodeURIComponent(driveId)}/members`, {
-		credentials: 'same-origin'
+export async function listDriveMembers(driveId: string): Promise<DriveMember[]> {
+	const { data, response } = await api.GET('/api/drives/{id}/members', {
+		params: { path: { id: driveId } }
 	});
+	return ensureData(data, response, `/api/drives/${driveId}/members`);
 }
 
 /**
@@ -73,14 +65,12 @@ export async function addDriveMember(
 	role: DriveRole,
 	expiresAt?: string | null
 ): Promise<DriveMember> {
-	const res = await apiFetch(`/api/drives/${encodeURIComponent(driveId)}/members`, {
-		method: 'POST',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		credentials: 'same-origin',
-		body: JSON.stringify({ subject, role, expires_at: expiresAt ?? null })
+	const { data, response } = await api.POST('/api/drives/{id}/members', {
+		params: { path: { id: driveId } },
+		body: { subject, role, expires_at: expiresAt ?? null }
 	});
-	if (!res.ok) throw new Error(`add member failed: ${res.status}`);
-	return (await res.json()) as DriveMember;
+	if (!response.ok || !data) throwFailed('add member', response);
+	return data;
 }
 
 /**
@@ -93,17 +83,12 @@ export async function updateDriveMember(
 	role: DriveRole,
 	expiresAt?: string | null
 ): Promise<DriveMember> {
-	const url =
-		`/api/drives/${encodeURIComponent(driveId)}/members/` +
-		`${encodeURIComponent(subject.type)}/${encodeURIComponent(subject.id)}`;
-	const res = await apiFetch(url, {
-		method: 'PATCH',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		credentials: 'same-origin',
-		body: JSON.stringify({ role, expires_at: expiresAt ?? null })
+	const { data, response } = await api.PATCH('/api/drives/{id}/members/{kind}/{sid}', {
+		params: { path: { id: driveId, kind: subject.type, sid: subject.id } },
+		body: { role, expires_at: expiresAt ?? null }
 	});
-	if (!res.ok) throw new Error(`update member failed: ${res.status}`);
-	return (await res.json()) as DriveMember;
+	if (!response.ok || !data) throwFailed('update member', response);
+	return data;
 }
 
 /**
@@ -115,21 +100,10 @@ export async function updateDriveMember(
  * can decide whether to surface a confirmation prompt vs an error.
  */
 export async function deleteDrive(driveId: string): Promise<void> {
-	const res = await apiFetch(`/api/drives/${encodeURIComponent(driveId)}`, {
-		method: 'DELETE',
-		credentials: 'same-origin',
-		headers: getCsrfHeaders()
+	const { error, response } = await api.DELETE('/api/drives/{id}', {
+		params: { path: { id: driveId } }
 	});
-	if (!res.ok) {
-		let detail = '';
-		try {
-			const parsed = (await res.json()) as { error?: string; message?: string };
-			detail = parsed.error ?? parsed.message ?? '';
-		} catch {
-			/* response body wasn't JSON */
-		}
-		throw new Error(detail || `delete drive failed: ${res.status}`);
-	}
+	if (!response.ok) throwFailed('delete drive', response, error);
 }
 
 /**
@@ -148,23 +122,12 @@ export async function updateDrivePolicies(
 	driveId: string,
 	partial: DrivePoliciesPartial
 ): Promise<DrivePolicies> {
-	const res = await apiFetch(`/api/drives/${encodeURIComponent(driveId)}/policies`, {
-		method: 'PATCH',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		credentials: 'same-origin',
-		body: JSON.stringify(partial)
+	const { data, error, response } = await api.PATCH('/api/drives/{id}/policies', {
+		params: { path: { id: driveId } },
+		body: partial
 	});
-	if (!res.ok) {
-		let detail = '';
-		try {
-			const parsed = (await res.json()) as { error?: string; message?: string };
-			detail = parsed.error ?? parsed.message ?? '';
-		} catch {
-			/* response body wasn't JSON */
-		}
-		throw new Error(detail || `update policies failed: ${res.status}`);
-	}
-	return (await res.json()) as DrivePolicies;
+	if (!response.ok || !data) throwFailed('update policies', response, error);
+	return data;
 }
 
 /**
@@ -176,13 +139,8 @@ export async function removeDriveMember(
 	driveId: string,
 	subject: DriveMemberSubject
 ): Promise<void> {
-	const url =
-		`/api/drives/${encodeURIComponent(driveId)}/members/` +
-		`${encodeURIComponent(subject.type)}/${encodeURIComponent(subject.id)}`;
-	const res = await apiFetch(url, {
-		method: 'DELETE',
-		headers: getCsrfHeaders(),
-		credentials: 'same-origin'
+	const { response } = await api.DELETE('/api/drives/{id}/members/{kind}/{sid}', {
+		params: { path: { id: driveId, kind: subject.type, sid: subject.id } }
 	});
-	if (!res.ok) throw new Error(`remove member failed: ${res.status}`);
+	if (!response.ok) throwFailed('remove member', response);
 }

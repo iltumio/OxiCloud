@@ -1,9 +1,9 @@
 /**
  * Typed API client with transparent 401 → token-refresh → retry.
  *
- * Ported from static/js/core/fetchWrapper.js. Unlike that wrapper, this does
- * NOT monkeypatch `window.fetch`; every endpoint module calls `apiFetch`
- * explicitly. The behavioural invariants are preserved exactly:
+ * Every endpoint call goes through `apiFetch` — either directly (blob
+ * downloads, uploads, odd protocols) or as the custom `fetch` of the typed
+ * openapi-fetch client in `$lib/api/index.ts`. The behavioural invariants:
  *
  *  - A captured raw `fetch` is used for the real network calls so the refresh
  *    request and the retry never re-enter the interceptor (no recursion).
@@ -15,6 +15,9 @@
  *    expired access token.
  *  - When refresh fails, the session-expired handler fires (clear + redirect)
  *    and the call rejects.
+ *  - `Request` inputs (openapi-fetch always sends these) are cloned BEFORE the
+ *    first dispatch so a 401-triggered retry can re-send a body whose original
+ *    stream was already consumed.
  */
 
 import { getCsrfHeaders } from './csrf';
@@ -92,6 +95,10 @@ export function createApiFetch(deps: ApiClientDeps): FetchFn {
 
 	const apiFetch: FetchFn = async (input, init) => {
 		const origin = deps.origin ?? globalThis.location?.origin ?? 'http://localhost';
+		// A Request's body stream is consumed by the first dispatch; keep a
+		// pristine clone around so the post-refresh retry can re-send it.
+		const retryInput =
+			typeof Request !== 'undefined' && input instanceof Request ? input.clone() : input;
 		const response = await rawFetch(input, init);
 		if (response.status !== 401) return response;
 
@@ -104,7 +111,7 @@ export function createApiFetch(deps: ApiClientDeps): FetchFn {
 			onSessionExpired();
 			throw new Error('Session expired');
 		}
-		return rawFetch(input, init);
+		return rawFetch(retryInput, init);
 	};
 
 	return apiFetch;

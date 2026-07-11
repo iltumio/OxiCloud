@@ -236,8 +236,9 @@ function persistLocaleToServer(locale: string): void {
 		headers: { 'Content-Type': 'application/json', ...getCsrfHeaders() },
 		credentials: 'same-origin',
 		body: JSON.stringify({ preferred_locale: locale })
-	}).catch((err: unknown) => {
-		console.debug('locale: server persistence skipped', err);
+	}).catch(() => {
+		/* Server persistence skipped (anonymous caller or transient network
+		   failure) — the locale still applies locally. */
 	});
 }
 

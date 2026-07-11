@@ -3,8 +3,9 @@
  *
  * Persists to the `oxi-theme` localStorage key (part of the normalised
  * `oxi-*` prefs namespace — see `$lib/utils/localStoragePrefs`) and
- * reflects the choice on `<html data-color-scheme>`. `auto` removes the
- * attribute so the OS `prefers-color-scheme` takes over. The anti-FOUC
+ * reflects the choice on `<html data-theme>`, which daisyUI keys its
+ * themes off. `auto` removes the attribute so the OS `prefers-color-scheme`
+ * takes over (daisyUI's `--default` / `--prefersdark` pair). The anti-FOUC
  * inline script in app.html applies the stored value before first paint;
  * this store owns runtime changes from the UI.
  */
@@ -32,8 +33,8 @@ const store = $state<{ theme: Theme }>({ theme: readInitial() });
 function apply(theme: Theme): void {
 	if (typeof document === 'undefined') return;
 	const html = document.documentElement;
-	if (theme === 'light' || theme === 'dark') html.setAttribute('data-color-scheme', theme);
-	else html.removeAttribute('data-color-scheme');
+	if (theme === 'light' || theme === 'dark') html.setAttribute('data-theme', theme);
+	else html.removeAttribute('data-theme');
 }
 
 export function setTheme(theme: Theme): void {

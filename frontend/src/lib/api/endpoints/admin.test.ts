@@ -1,26 +1,36 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('$lib/api/client', () => ({ apiFetch: vi.fn(), apiJson: vi.fn() }));
-vi.mock('$lib/api/csrf', () => ({ getCsrfHeaders: () => ({ 'x-csrf-token': 't' }) }));
+vi.mock('$lib/api/client', () => ({
+	apiFetch: vi.fn(),
+	apiJson: vi.fn(),
+	ApiError: class ApiError extends Error {},
+	setSessionExpiredHandler: vi.fn()
+}));
+vi.mock('$lib/api/csrf', () => ({
+	getCsrfHeaders: () => ({ 'x-csrf-token': 't' }),
+	getCsrfToken: () => 't'
+}));
 
-import { apiFetch, apiJson } from '$lib/api/client';
+import { apiFetch } from '$lib/api/client';
 import * as admin from './admin';
 
-const okRes = (body: unknown = {}) =>
-	({ ok: true, status: 200, json: async () => body }) as unknown as Response;
-const errRes = (status = 400, body: unknown = { message: 'nope' }) =>
-	({ ok: false, status, json: async () => body }) as unknown as Response;
+// The typed openapi-fetch client sends Request objects through apiFetch and
+// parses real Responses, so the mock returns a FRESH Response per call.
+const jsonRes = (body: unknown = {}, status = 200) =>
+	new Response(JSON.stringify(body), {
+		status,
+		headers: { 'Content-Type': 'application/json' }
+	});
 
-const fetchMock = apiFetch as unknown as ReturnType<typeof vi.fn>;
-const jsonMock = apiJson as unknown as ReturnType<typeof vi.fn>;
+const fetchMock = vi.mocked(apiFetch);
+const requests = () => fetchMock.mock.calls.map(([input]) => input as Request);
 
 beforeEach(() => {
 	vi.clearAllMocks();
-	fetchMock.mockResolvedValue(okRes());
-	jsonMock.mockResolvedValue({});
+	fetchMock.mockImplementation(async () => jsonRes({}));
 });
 
-describe('admin mutate-based endpoints', () => {
+describe('admin mutation endpoints', () => {
 	it('resolve on success and call the expected URL/method', async () => {
 		await admin.createUser({
 			username: 'u',
@@ -29,10 +39,9 @@ describe('admin mutate-based endpoints', () => {
 			role: 'user',
 			quota_bytes: 0
 		});
-		expect(fetchMock).toHaveBeenCalledWith(
-			'/api/admin/users',
-			expect.objectContaining({ method: 'POST' })
-		);
+		const first = requests()[0];
+		expect(first.url).toContain('/api/admin/users');
+		expect(first.method).toBe('POST');
 		await admin.setUserRole('1', 'admin');
 		await admin.setUserActive('1', false);
 		await admin.setUserQuota('1', 100);
@@ -48,26 +57,25 @@ describe('admin mutate-based endpoints', () => {
 		await admin.migrationAction('start');
 		await admin.migrationAction('pause');
 		expect(fetchMock).toHaveBeenCalled();
+		expect(requests().at(-1)!.url).toContain('/api/admin/storage/migration/pause');
 	});
 
 	it('throw the server message on failure', async () => {
-		fetchMock.mockResolvedValue(errRes(409, { message: 'conflict' }));
+		fetchMock.mockImplementation(async () => jsonRes({ message: 'conflict' }, 409));
 		await expect(admin.deleteUser('1')).rejects.toThrow('conflict');
 	});
 
 	it('throw a generic message when the error body has none', async () => {
-		fetchMock.mockResolvedValue(errRes(500, {}));
+		fetchMock.mockImplementation(async () => jsonRes({}, 500));
 		await expect(admin.setUserActive('1', true)).rejects.toThrow(/failed: 500/);
 	});
 });
 
 describe('admin read endpoints', () => {
-	it('call apiJson for the listing/settings reads', async () => {
+	it('hit the listing/settings read URLs', async () => {
+		fetchMock.mockImplementation(async () => jsonRes({}));
 		await admin.listUsers(25, 0);
-		expect(jsonMock).toHaveBeenCalledWith(
-			expect.stringContaining('/api/admin/users?limit=25&offset=0'),
-			expect.anything()
-		);
+		expect(requests()[0].url).toContain('/api/admin/users?limit=25&offset=0');
 		await admin.getDashboard();
 		await admin.getSmtpInfo();
 		await admin.getOidcSettings();
@@ -75,47 +83,57 @@ describe('admin read endpoints', () => {
 		await admin.getMigration();
 		await admin.listPlugins();
 		await admin.getPluginLogs('id', { limit: 50, offset: 0 });
-		expect(jsonMock).toHaveBeenCalled();
+		expect(requests().at(-1)!.url).toContain('/api/admin/plugins/id/logs?limit=50&offset=0');
 	});
 
 	it('getPluginRetention returns null when the request is not ok', async () => {
-		fetchMock.mockResolvedValueOnce(errRes(404, {}));
+		fetchMock.mockImplementationOnce(async () => jsonRes({}, 404));
 		await expect(admin.getPluginRetention('id')).resolves.toBeNull();
-		fetchMock.mockResolvedValueOnce(okRes({ max_age_days: 7, max_entries: 50 }));
+		fetchMock.mockImplementationOnce(async () => jsonRes({ max_age_days: 7, max_entries: 50 }));
 		await expect(admin.getPluginRetention('id')).resolves.toMatchObject({ max_age_days: 7 });
 	});
 });
 
 describe('admin test/probe endpoints', () => {
 	it('sendSmtpTest maps 503 to an unconfigured message', async () => {
-		fetchMock.mockResolvedValue({ status: 503, json: async () => ({}) } as unknown as Response);
+		fetchMock.mockImplementation(async () => jsonRes({}, 503));
 		await expect(admin.sendSmtpTest('to@x.test')).resolves.toMatchObject({ success: false });
 	});
 
 	it('sendSmtpTest returns the parsed result otherwise', async () => {
-		fetchMock.mockResolvedValue(okRes({ success: true }));
+		fetchMock.mockImplementation(async () => jsonRes({ success: true }));
 		await expect(admin.sendSmtpTest('to@x.test')).resolves.toMatchObject({ success: true });
 	});
 
+	it('sendSmtpTest returns the parsed failure body on a non-2xx probe', async () => {
+		fetchMock.mockImplementation(async () => jsonRes({ success: false, error: 'boom' }, 400));
+		await expect(admin.sendSmtpTest('to@x.test')).resolves.toMatchObject({
+			success: false,
+			error: 'boom'
+		});
+	});
+
 	it('testOidc / testStorage return parsed results', async () => {
-		fetchMock.mockResolvedValue(okRes({ success: true }));
+		fetchMock.mockImplementation(async () => jsonRes({ success: true }));
 		await expect(admin.testOidc('https://idp')).resolves.toBeTruthy();
-		fetchMock.mockResolvedValue(okRes({ connected: true }));
-		await expect(admin.testStorage({ backend: 's3' })).resolves.toMatchObject({ connected: true });
+		fetchMock.mockImplementation(async () => jsonRes({ connected: true }));
+		await expect(admin.testStorage({ backend: 's3' })).resolves.toMatchObject({
+			connected: true
+		});
 	});
 
 	it('verifyMigration fills defaults and throws on error', async () => {
-		fetchMock.mockResolvedValue(okRes({ passed: true }));
+		fetchMock.mockImplementation(async () => jsonRes({ passed: true }));
 		await expect(admin.verifyMigration(10)).resolves.toMatchObject({
 			passed: true,
 			sample_checked: 0
 		});
-		fetchMock.mockResolvedValue(errRes(500, {}));
+		fetchMock.mockImplementation(async () => jsonRes({}, 500));
 		await expect(admin.verifyMigration()).rejects.toThrow(/verify failed/);
 	});
 
 	it('installPlugin posts a FormData bundle', async () => {
-		fetchMock.mockResolvedValue(okRes({ id: 'com.example.hello' }));
+		fetchMock.mockImplementation(async () => jsonRes({ id: 'com.example.hello' }));
 		const file = new File([new Uint8Array([1, 2, 3])], 'p.zip', { type: 'application/zip' });
 		await admin.installPlugin(file);
 		expect(fetchMock).toHaveBeenCalledWith(

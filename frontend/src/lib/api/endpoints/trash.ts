@@ -1,12 +1,19 @@
 /** Trash endpoints — ported from trashModel.js + views/trash. */
-import { apiFetch } from '$lib/api/client';
-import { getCsrfHeaders } from '$lib/api/csrf';
+import { api } from '$lib/api';
+import { throwFailed } from '$lib/api/http';
 import { t } from '$lib/i18n/index.svelte';
-import { fetchResourcePage, type ResourcePage, type ResourcePageOpts } from './resources';
+import { resourceFeedQuery, type ResourcePage, type ResourcePageOpts } from './resources';
 import type { TrashResourceItem } from '$lib/api/types';
 
-export function fetchTrashPage(opts?: ResourcePageOpts): Promise<ResourcePage<TrashResourceItem>> {
-	return fetchResourcePage<TrashResourceItem>('/api/trash/resources', 'deletion_date', opts);
+export async function fetchTrashPage(
+	opts: ResourcePageOpts = {}
+): Promise<ResourcePage<TrashResourceItem>> {
+	const { data, response } = await api.GET('/api/trash/resources', {
+		params: { query: resourceFeedQuery(opts, 'deletion_date') },
+		cache: 'no-store'
+	});
+	if (!response.ok || !data) throw new Error(`GET /api/trash/resources failed: ${response.status}`);
+	return data;
 }
 
 /** Days from now until `value` (negative when already past). */
@@ -85,31 +92,22 @@ export function remainingDaysBucket(value: number | string | null | undefined): 
 }
 
 export async function restoreTrashItem(trashId: string): Promise<void> {
-	const res = await apiFetch(`/api/trash/${trashId}/restore`, {
-		method: 'POST',
-		credentials: 'same-origin',
-		headers: { 'Content-Type': 'application/json', ...getCsrfHeaders() },
-		body: '{}'
+	const { response } = await api.POST('/api/trash/{id}/restore', {
+		params: { path: { id: trashId } }
 	});
-	if (!res.ok) throw new Error(`restore failed: ${res.status}`);
+	if (!response.ok) throwFailed('restore', response);
 }
 
 export async function deleteTrashItem(trashId: string): Promise<void> {
-	const res = await apiFetch(`/api/trash/${trashId}`, {
-		method: 'DELETE',
-		credentials: 'same-origin',
-		headers: getCsrfHeaders()
+	const { response } = await api.DELETE('/api/trash/{id}', {
+		params: { path: { id: trashId } }
 	});
-	if (!res.ok) throw new Error(`permanent delete failed: ${res.status}`);
+	if (!response.ok) throwFailed('permanent delete', response);
 }
 
 export async function emptyTrash(): Promise<void> {
-	const res = await apiFetch('/api/trash/empty', {
-		method: 'DELETE',
-		credentials: 'same-origin',
-		headers: getCsrfHeaders()
-	});
-	if (!res.ok) throw new Error(`empty trash failed: ${res.status}`);
+	const { response } = await api.DELETE('/api/trash/empty');
+	if (!response.ok) throwFailed('empty trash', response);
 }
 
 /**
@@ -120,10 +118,8 @@ export async function emptyTrash(): Promise<void> {
  * caller lacks Delete on the named drive (anti-enum).
  */
 export async function emptyTrashForDrive(driveId: string): Promise<void> {
-	const res = await apiFetch(`/api/trash/drive/${encodeURIComponent(driveId)}`, {
-		method: 'DELETE',
-		credentials: 'same-origin',
-		headers: getCsrfHeaders()
+	const { response } = await api.DELETE('/api/trash/drive/{drive_id}', {
+		params: { path: { drive_id: driveId } }
 	});
-	if (!res.ok) throw new Error(`empty drive trash failed: ${res.status}`);
+	if (!response.ok) throwFailed('empty drive trash', response);
 }

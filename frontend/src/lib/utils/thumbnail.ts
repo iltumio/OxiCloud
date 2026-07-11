@@ -25,18 +25,39 @@ import { getCsrfHeaders } from '$lib/api/csrf';
 const PDFJS_LIB_URL = '/vendors/pdf.min.mjs';
 const PDFJS_WORKER_URL = '/vendors/pdf.worker.min.mjs';
 
-// Anything that ships a runtime API surface too broad to type here without
-// vendoring `@types/pdfjs-dist`; the two methods we call (`getDocument`,
-// worker options) are stable across pdf.js 4.x.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let pdfjsLibPromise: Promise<any> | null = null;
+// pdf.js ships a runtime API surface too broad to type here without vendoring
+// `@types/pdfjs-dist`; declare only the slice we call (`getDocument`, worker
+// options, first-page render), stable across pdf.js 4.x — same minimal-typing
+// pattern as `$lib/vendor/hashWasm` / `$lib/vendor/maplibre`.
+interface PdfjsViewport {
+	width: number;
+	height: number;
+}
+
+interface PdfjsPage {
+	getViewport(params: { scale: number }): PdfjsViewport;
+	render(params: { canvasContext: CanvasRenderingContext2D | null; viewport: PdfjsViewport }): {
+		promise: Promise<void>;
+	};
+}
+
+interface PdfjsDocument {
+	getPage(pageNumber: number): Promise<PdfjsPage>;
+}
+
+interface PdfjsLib {
+	GlobalWorkerOptions: { workerSrc: string };
+	getDocument(source: string): { promise: Promise<PdfjsDocument> };
+}
+
+let pdfjsLibPromise: Promise<PdfjsLib> | null = null;
 let pdfWorkerWarmed = false;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getPdfjsLib(): Promise<any> {
+function getPdfjsLib(): Promise<PdfjsLib> {
 	if (!pdfjsLibPromise) {
 		pdfjsLibPromise = import(/* @vite-ignore */ PDFJS_LIB_URL)
-			.then((lib) => {
+			.then((mod) => {
+				const lib = mod as unknown as PdfjsLib;
 				lib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_URL;
 				return lib;
 			})

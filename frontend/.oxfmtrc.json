@@ -1,0 +1,22 @@
+{
+	"$schema": "./node_modules/oxfmt/configuration_schema.json",
+	"useTabs": true,
+	"singleQuote": true,
+	"trailingComma": "none",
+	"printWidth": 100,
+	"sortPackageJson": false,
+	"svelte": {},
+	"ignorePatterns": [
+		"bench/",
+		"build/",
+		".svelte-kit/",
+		"package/",
+		"node_modules/",
+		"package.json",
+		"package-lock.json",
+		"src/lib/api/generated/",
+		"src/lib/icons/registry.ts",
+		"static/",
+		"coverage/"
+	]
+}

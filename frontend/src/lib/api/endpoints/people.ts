@@ -1,6 +1,7 @@
 /** People (faces) endpoints — ported from features/library/people.js. */
-import { apiFetch } from '$lib/api/client';
-import { getCsrfHeaders } from '$lib/api/csrf';
+import { api } from '$lib/api';
+import { throwFailed } from '$lib/api/http';
+import { apiQueryOptions } from '$lib/api/query';
 
 /** An identity cluster from `GET /api/people`. */
 export interface Person {
@@ -18,9 +19,14 @@ export interface Person {
  * when it is off the route 404s; callers treat that as "faces disabled".
  */
 export async function fetchPeople(): Promise<Person[]> {
-	const res = await apiFetch('/api/people', { credentials: 'same-origin' });
-	if (!res.ok) throw new Error(`people failed: ${res.status}`);
-	return (await res.json()) as Person[];
+	const { data, response } = await api.GET('/api/people');
+	if (!response.ok || !data) throw new Error(`people failed: ${response.status}`);
+	return data;
+}
+
+/** svelte-query options for {@link fetchPeople}. */
+export function peopleOptions() {
+	return apiQueryOptions('get', '/api/people');
 }
 
 /**
@@ -29,8 +35,8 @@ export async function fetchPeople(): Promise<Person[]> {
  */
 export async function peopleEnabled(): Promise<boolean> {
 	try {
-		const res = await apiFetch('/api/people', { credentials: 'same-origin' });
-		return res.ok;
+		const { response } = await api.GET('/api/people');
+		return response.ok;
 	} catch {
 		return false;
 	}
@@ -38,18 +44,18 @@ export async function peopleEnabled(): Promise<boolean> {
 
 /** File ids of the photos a person appears in. */
 export async function fetchPersonPhotos(personId: string): Promise<string[]> {
-	const res = await apiFetch(`/api/people/${personId}/photos`, { credentials: 'same-origin' });
-	if (!res.ok) throw new Error(`person photos failed: ${res.status}`);
-	return (await res.json()) as string[];
+	const { data, response } = await api.GET('/api/people/{id}/photos', {
+		params: { path: { id: personId } }
+	});
+	if (!response.ok || !data) throw new Error(`person photos failed: ${response.status}`);
+	return data;
 }
 
 /** Rename a person, or pass `null` to clear the name. */
 export async function renamePerson(personId: string, name: string | null): Promise<void> {
-	const res = await apiFetch(`/api/people/${personId}`, {
-		method: 'PATCH',
-		credentials: 'same-origin',
-		headers: { 'Content-Type': 'application/json', ...getCsrfHeaders() },
-		body: JSON.stringify({ name })
+	const { response } = await api.PATCH('/api/people/{id}', {
+		params: { path: { id: personId } },
+		body: { name }
 	});
-	if (!res.ok) throw new Error(`rename failed: ${res.status}`);
+	if (!response.ok) throwFailed('rename', response);
 }

@@ -1,7 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-vi.mock('$lib/api/client', () => ({ apiFetch: vi.fn(), apiJson: vi.fn() }));
-vi.mock('$lib/api/csrf', () => ({ getCsrfHeaders: () => ({}) }));
+vi.mock('$lib/api/client', () => ({
+	apiFetch: vi.fn(),
+	apiJson: vi.fn(),
+	ApiError: class ApiError extends Error {},
+	setSessionExpiredHandler: vi.fn()
+}));
+vi.mock('$lib/api/csrf', () => ({ getCsrfHeaders: () => ({}), getCsrfToken: () => '' }));
 
 import { apiFetch } from '$lib/api/client';
 import {
@@ -12,7 +17,13 @@ import {
 	emptyTrash
 } from './trash';
 
-const fetchMock = apiFetch as unknown as ReturnType<typeof vi.fn>;
+const jsonRes = (body: unknown = {}, status = 200) =>
+	new Response(JSON.stringify(body), {
+		status,
+		headers: { 'Content-Type': 'application/json' }
+	});
+
+const fetchMock = vi.mocked(apiFetch);
 const DAY = 86_400_000;
 
 describe('expiryChip', () => {
@@ -52,16 +63,20 @@ describe('remainingDaysBucket', () => {
 describe('trash mutations', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+		fetchMock.mockImplementation(async () => jsonRes({}));
 	});
 	it('call the API for restore/delete/empty', async () => {
 		await restoreTrashItem('t1').catch(() => {});
 		await deleteTrashItem('t1').catch(() => {});
 		await emptyTrash().catch(() => {});
 		expect(fetchMock).toHaveBeenCalledTimes(3);
+		const urls = fetchMock.mock.calls.map(([input]) => (input as Request).url);
+		expect(urls[0]).toContain('/api/trash/t1/restore');
+		expect(urls[1]).toContain('/api/trash/t1');
+		expect(urls[2]).toContain('/api/trash/empty');
 	});
 	it('emptyTrash throws on a failed response', async () => {
-		fetchMock.mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
+		fetchMock.mockImplementation(async () => jsonRes({}, 500));
 		await expect(emptyTrash()).rejects.toThrow();
 	});
 });

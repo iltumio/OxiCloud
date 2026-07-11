@@ -1,8 +1,9 @@
 /** Music / playlist endpoints — ported from features/library/music.js. */
-import { apiFetch, apiJson } from '$lib/api/client';
+import { api } from '$lib/api';
+import { apiFetch } from '$lib/api/client';
 import { getCsrfHeaders } from '$lib/api/csrf';
-
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
+import { ensureData, throwFailed } from '$lib/api/http';
+import { apiQueryOptions } from '$lib/api/query';
 
 export interface Playlist {
 	id: string;
@@ -46,36 +47,38 @@ export interface PlaylistUpdate {
 	cover_file_id?: string | null;
 }
 
-export function listPlaylists(): Promise<Playlist[]> {
-	return apiJson<Playlist[]>('/api/playlists', { credentials: 'same-origin' });
+export async function listPlaylists(): Promise<Playlist[]> {
+	const { data, response } = await api.GET('/api/playlists');
+	return ensureData(data, response, '/api/playlists');
 }
 
-export function listTracks(playlistId: string): Promise<PlaylistItem[]> {
-	return apiJson<PlaylistItem[]>(`/api/playlists/${playlistId}/tracks`, {
-		credentials: 'same-origin'
+/** svelte-query options for {@link listPlaylists}. */
+export function playlistsOptions() {
+	return apiQueryOptions('get', '/api/playlists');
+}
+
+export async function listTracks(playlistId: string): Promise<PlaylistItem[]> {
+	const { data, response } = await api.GET('/api/playlists/{id}/tracks', {
+		params: { path: { id: playlistId } }
 	});
+	return ensureData(data, response, `/api/playlists/${playlistId}/tracks`);
 }
 
 export async function createPlaylist(name: string): Promise<Playlist> {
-	const res = await apiFetch('/api/playlists', {
-		method: 'POST',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: JSON.stringify({ name, description: null })
+	const { data, response } = await api.POST('/api/playlists', {
+		body: { name, description: null }
 	});
-	if (!res.ok) throw new Error(`create playlist failed: ${res.status}`);
-	return (await res.json()) as Playlist;
+	if (!response.ok || !data) throwFailed('create playlist', response);
+	return data;
 }
 
 /** Patch one or more playlist fields (name, description, public flag, cover). */
 export async function updatePlaylist(playlistId: string, patch: PlaylistUpdate): Promise<void> {
-	const res = await apiFetch(`/api/playlists/${playlistId}`, {
-		method: 'PUT',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: JSON.stringify(patch)
+	const { response } = await api.PUT('/api/playlists/{id}', {
+		params: { path: { id: playlistId } },
+		body: patch
 	});
-	if (!res.ok) throw new Error(`update playlist failed: ${res.status}`);
+	if (!response.ok) throwFailed('update playlist', response);
 }
 
 export function renamePlaylist(playlistId: string, name: string): Promise<void> {
@@ -83,48 +86,41 @@ export function renamePlaylist(playlistId: string, name: string): Promise<void> 
 }
 
 export async function deletePlaylist(playlistId: string): Promise<void> {
-	const res = await apiFetch(`/api/playlists/${playlistId}`, {
-		method: 'DELETE',
-		credentials: 'same-origin',
-		headers: getCsrfHeaders()
+	const { response } = await api.DELETE('/api/playlists/{id}', {
+		params: { path: { id: playlistId } }
 	});
-	if (!res.ok) throw new Error(`delete playlist failed: ${res.status}`);
+	if (!response.ok) throwFailed('delete playlist', response);
 }
 
 export async function addTracks(playlistId: string, fileIds: string[]): Promise<void> {
-	const res = await apiFetch(`/api/playlists/${playlistId}/tracks`, {
-		method: 'POST',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: JSON.stringify({ file_ids: fileIds })
+	const { response } = await api.POST('/api/playlists/{id}/tracks', {
+		params: { path: { id: playlistId } },
+		body: { file_ids: fileIds }
 	});
-	if (!res.ok) throw new Error(`add tracks failed: ${res.status}`);
+	if (!response.ok) throwFailed('add tracks', response);
 }
 
 export async function removeTrack(playlistId: string, fileId: string): Promise<void> {
-	const res = await apiFetch(`/api/playlists/${playlistId}/tracks/${encodeURIComponent(fileId)}`, {
-		method: 'DELETE',
-		credentials: 'same-origin',
-		headers: getCsrfHeaders()
+	const { response } = await api.DELETE('/api/playlists/{id}/tracks/{file_id}', {
+		params: { path: { id: playlistId, file_id: fileId } }
 	});
-	if (!res.ok) throw new Error(`remove track failed: ${res.status}`);
+	if (!response.ok) throwFailed('remove track', response);
 }
 
 /** Persist a new track order. `itemIds` are PlaylistItem ids in the desired order. */
 export async function reorderTracks(playlistId: string, itemIds: string[]): Promise<void> {
-	const res = await apiFetch(`/api/playlists/${playlistId}/reorder`, {
-		method: 'PUT',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: JSON.stringify({ item_ids: itemIds })
+	const { response } = await api.PUT('/api/playlists/{id}/reorder', {
+		params: { path: { id: playlistId } },
+		body: { item_ids: itemIds }
 	});
-	if (!res.ok) throw new Error(`reorder failed: ${res.status}`);
+	if (!response.ok) throwFailed('reorder', response);
 }
 
-export function listShares(playlistId: string): Promise<MusicShare[]> {
-	return apiJson<MusicShare[]>(`/api/playlists/${playlistId}/shares`, {
-		credentials: 'same-origin'
+export async function listShares(playlistId: string): Promise<MusicShare[]> {
+	const { data, response } = await api.GET('/api/playlists/{id}/shares', {
+		params: { path: { id: playlistId } }
 	});
+	return ensureData(data, response, `/api/playlists/${playlistId}/shares`);
 }
 
 export async function sharePlaylist(
@@ -132,22 +128,18 @@ export async function sharePlaylist(
 	userId: string,
 	canWrite = false
 ): Promise<void> {
-	const res = await apiFetch(`/api/playlists/${playlistId}/share`, {
-		method: 'POST',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: JSON.stringify({ user_id: userId, can_write: canWrite })
+	const { response } = await api.POST('/api/playlists/{id}/share', {
+		params: { path: { id: playlistId } },
+		body: { user_id: userId, can_write: canWrite }
 	});
-	if (!res.ok) throw new Error(`share playlist failed: ${res.status}`);
+	if (!response.ok) throwFailed('share playlist', response);
 }
 
 export async function removeShare(playlistId: string, userId: string): Promise<void> {
-	const res = await apiFetch(`/api/playlists/${playlistId}/share/${encodeURIComponent(userId)}`, {
-		method: 'DELETE',
-		credentials: 'same-origin',
-		headers: getCsrfHeaders()
+	const { response } = await api.DELETE('/api/playlists/{id}/share/{user_id}', {
+		params: { path: { id: playlistId, user_id: userId } }
 	});
-	if (!res.ok) throw new Error(`remove share failed: ${res.status}`);
+	if (!response.ok) throwFailed('remove share', response);
 }
 
 /** Upload an image and return its new file id (used to set a playlist cover). */

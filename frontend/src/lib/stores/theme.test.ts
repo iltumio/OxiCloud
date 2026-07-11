@@ -6,15 +6,15 @@ import { theme, setTheme, THEME_STORAGE_KEY } from './theme.svelte';
 describe('theme store', () => {
 	beforeEach(() => {
 		localStorage.clear();
-		document.documentElement.removeAttribute('data-color-scheme');
+		document.documentElement.removeAttribute('data-theme');
 	});
 	it('sets light/dark, persists, and reflects on <html>', () => {
 		setTheme('light');
 		expect(theme.current).toBe('light');
 		expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('light');
-		expect(document.documentElement.getAttribute('data-color-scheme')).toBe('light');
+		expect(document.documentElement.getAttribute('data-theme')).toBe('light');
 		setTheme('dark');
-		expect(document.documentElement.getAttribute('data-color-scheme')).toBe('dark');
+		expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
 		expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('dark');
 	});
 	it('auto clears storage and removes the attribute', () => {
@@ -22,7 +22,7 @@ describe('theme store', () => {
 		setTheme('auto');
 		expect(theme.current).toBe('auto');
 		expect(localStorage.getItem(THEME_STORAGE_KEY)).toBeNull();
-		expect(document.documentElement.hasAttribute('data-color-scheme')).toBe(false);
+		expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
 	});
 	it('theme.set is an alias for setTheme', () => {
 		theme.set('light');
@@ -30,10 +30,10 @@ describe('theme store', () => {
 	});
 
 	// Drift guard: `src/app.html` inlines an anti-FOUC theme reader that
-	// reads the SAME localStorage key. Because that script runs before
-	// any JS bundle loads, it can't `import { THEME_STORAGE_KEY }`;
-	// the key is hardcoded there. This test reads the file verbatim
-	// and refuses drift.
+	// reads the SAME localStorage key and reflects it on the SAME
+	// attribute. Because that script runs before any JS bundle loads, it
+	// can't `import { THEME_STORAGE_KEY }`; the key is hardcoded there.
+	// This test reads the file verbatim and refuses drift.
 	it('app.html theme key matches THEME_STORAGE_KEY', () => {
 		// Resolve against Vitest's cwd (the `frontend/` dir per its
 		// invocation) — jsdom rewrites `import.meta.url` to `http://…`,
@@ -44,6 +44,11 @@ describe('theme store', () => {
 			html.includes(`localStorage.getItem('${THEME_STORAGE_KEY}')`),
 			`app.html must call localStorage.getItem('${THEME_STORAGE_KEY}') — ` +
 				`update the inline script when THEME_STORAGE_KEY changes.`
+		).toBe(true);
+		expect(
+			html.includes(`setAttribute('data-theme'`),
+			`app.html's inline script must reflect the theme on <html data-theme> — ` +
+				`daisyUI keys its themes off that attribute, matching this store's apply().`
 		).toBe(true);
 	});
 });

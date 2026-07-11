@@ -1,6 +1,5 @@
 /** Photos timeline endpoint — ported from features/library/photos.js. */
-import { apiFetch } from '$lib/api/client';
-import { getCsrfHeaders } from '$lib/api/csrf';
+import { api } from '$lib/api';
 import type { FileItem } from '$lib/api/types';
 
 /**
@@ -52,11 +51,11 @@ export interface GeoCluster {
  * Places feature is enabled (otherwise the route 404s).
  */
 export async function fetchPhotosGeo(bbox: string, zoom: number): Promise<GeoCluster[]> {
-	const res = await apiFetch(`/api/photos/geo?bbox=${encodeURIComponent(bbox)}&zoom=${zoom}`, {
-		credentials: 'same-origin'
+	const { data, response } = await api.GET('/api/photos/geo', {
+		params: { query: { bbox, zoom } }
 	});
-	if (!res.ok) throw new Error(`photos geo failed: ${res.status}`);
-	return (await res.json()) as GeoCluster[];
+	if (!response.ok || !data) throw new Error(`photos geo failed: ${response.status}`);
+	return data;
 }
 
 /** Backend `MAX_BATCH_SIZE` — chunk larger selections into separate requests. */
@@ -68,24 +67,26 @@ const BATCH_CHUNK_SIZE = 1000;
  * `limit` items come back.
  */
 export async function fetchPhotos(limit = 60, before?: string | null): Promise<PhotoPage> {
-	let url = `/api/photos?limit=${limit}`;
-	if (before) url += `&before=${encodeURIComponent(before)}`;
-	const res = await apiFetch(url, { credentials: 'same-origin' });
-	if (!res.ok) throw new Error(`photos failed: ${res.status}`);
-	const items = (await res.json()) as PhotoItem[];
-	const cursor = res.headers.get('X-Next-Cursor');
+	const { data, response } = await api.GET('/api/photos', {
+		params: { query: { limit, ...(before ? { before } : {}) } }
+	});
+	if (!response.ok) throw new Error(`photos failed: ${response.status}`);
+	const items = data ?? [];
+	const cursor = response.headers.get('X-Next-Cursor');
 	return {
-		items: items ?? [],
-		nextCursor: cursor && items && items.length >= limit ? cursor : null
+		items,
+		nextCursor: cursor && items.length >= limit ? cursor : null
 	};
 }
 
 /** Fetch EXIF metadata for a file. Returns `null` on any error (non-critical). */
 export async function fetchFileMetadata(fileId: string): Promise<FileMetadata | null> {
 	try {
-		const res = await apiFetch(`/api/files/${fileId}/metadata`, { credentials: 'same-origin' });
-		if (!res.ok) return null;
-		return (await res.json()) as FileMetadata;
+		const { data, response } = await api.GET('/api/files/{id}/metadata', {
+			params: { path: { id: fileId } }
+		});
+		if (!response.ok || !data) return null;
+		return data;
 	} catch {
 		return null;
 	}
@@ -100,15 +101,11 @@ export async function batchTrash(fileIds: string[]): Promise<Set<string>> {
 	const trashed = new Set<string>();
 	for (let i = 0; i < fileIds.length; i += BATCH_CHUNK_SIZE) {
 		const chunk = fileIds.slice(i, i + BATCH_CHUNK_SIZE);
-		const res = await apiFetch('/api/batch/trash', {
-			method: 'POST',
-			credentials: 'same-origin',
-			headers: { 'Content-Type': 'application/json', ...getCsrfHeaders() },
-			body: JSON.stringify({ file_ids: chunk, folder_ids: [] })
+		const { data, response } = await api.POST('/api/batch/trash', {
+			body: { file_ids: chunk, folder_ids: [] }
 		});
-		// 200 = all trashed, 206 = partial; both carry `successful`.
-		if (!res.ok && res.status !== 206) continue;
-		const data = (await res.json().catch(() => ({}))) as Partial<BatchTrashResult>;
+		// 200 = all trashed, 206 = partial; both are ok and carry `successful`.
+		if (!response.ok) continue;
 		const ok = Array.isArray(data?.successful) ? data.successful : chunk;
 		for (const id of ok) trashed.add(id);
 	}

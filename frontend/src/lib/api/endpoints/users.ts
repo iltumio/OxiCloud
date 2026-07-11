@@ -8,7 +8,7 @@
  * resolver. The endpoint enforces its own visibility rules; a non-visible
  * profile resolves to `null` so callers fall back to whatever label they have.
  */
-import { apiFetch } from '$lib/api/client';
+import { api } from '$lib/api';
 
 export interface ResolvedUser {
 	id: string;
@@ -18,13 +18,15 @@ export interface ResolvedUser {
 	isExternal: boolean;
 }
 
-/** Subset of the backend `UserDto` we consume here. */
-interface UserDtoShape {
+/** Wire subset of the backend `UserDto` exposed by `GET /api/users/{id}`. */
+export interface UserProfileDto {
 	id: string;
 	username?: string | null;
 	email?: string | null;
 	image?: string | null;
 	is_external: boolean;
+	given_name?: string;
+	family_name?: string;
 }
 
 // id → in-flight/resolved lookup (the Promise is cached so concurrent callers
@@ -37,11 +39,10 @@ export function resolveUser(id: string): Promise<ResolvedUser | null> {
 
 	const pending = (async (): Promise<ResolvedUser | null> => {
 		try {
-			const res = await apiFetch(`/api/users/${encodeURIComponent(id)}`, {
-				credentials: 'same-origin'
+			const { data: u, response } = await api.GET('/api/users/{id}', {
+				params: { path: { id } }
 			});
-			if (!res.ok) return null;
-			const u = (await res.json()) as UserDtoShape;
+			if (!response.ok || !u) return null;
 			return {
 				id: u.id,
 				name: u.username?.trim() || u.email || u.id,

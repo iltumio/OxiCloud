@@ -1,12 +1,11 @@
 <!doctype html>
-<html lang="en" data-color-scheme>
+<html lang="en">
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<!-- Icon set — mirrors the legacy static/index.html head. SVG is
-		     the primary (modern browsers use it, scales at every DPI); the
-		     .ico fallback covers old browsers + Windows taskbar shortcuts.
-		     Apple touch icon: iOS home-screen. Safari mask icon: pinned
+		<!-- Icon set — SVG is the primary (modern browsers use it, scales at every
+		     DPI); the .ico fallback covers old browsers + Windows taskbar
+		     shortcuts. Apple touch icon: iOS home-screen. Safari mask icon: pinned
 		     tabs. Manifest wires the PWA install flow. -->
 		<link rel="icon" type="image/svg+xml" href="%sveltekit.assets%/logo/logo-plain.svg" />
 		<link rel="icon" href="%sveltekit.assets%/favicon.ico" sizes="32x32" />
@@ -19,7 +18,9 @@
 			Anti-FOUC theme init — runs synchronously before first paint.
 			Reads the `oxi-theme` localStorage key (part of the normalised
 			`oxi-*` prefs namespace, see $lib/utils/localStoragePrefs) and
-			reflects it on `<html data-color-scheme>`.
+			reflects it on `<html data-theme>`, which daisyUI keys its
+			themes off. No attribute = follow the OS preference (daisyUI's
+			`--default` / `--prefersdark` theme pair handles that).
 
 			KEEP IN SYNC: the 'oxi-theme' string below MUST match
 			`THEME_STORAGE_KEY` exported from
@@ -39,8 +40,8 @@
 				try {
 					var s = localStorage.getItem('oxi-theme');
 					var h = document.documentElement;
-					if (s === 'light' || s === 'dark') h.setAttribute('data-color-scheme', s);
-					else h.removeAttribute('data-color-scheme');
+					if (s === 'light' || s === 'dark') h.setAttribute('data-theme', s);
+					else h.removeAttribute('data-theme');
 				} catch (e) {
 					/* localStorage unavailable — fall back to OS preference */
 				}
@@ -54,10 +55,10 @@
 			resolved theme so there's no colour flash when the app CSS arrives.
 		-->
 		<style>
-			html[data-color-scheme='dark'] {
+			html[data-theme='dark'] {
 				color-scheme: dark;
 			}
-			html[data-color-scheme='light'] {
+			html[data-theme='light'] {
 				color-scheme: light;
 			}
 			#app-splash {

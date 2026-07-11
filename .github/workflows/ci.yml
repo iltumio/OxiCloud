@@ -71,7 +71,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Check (svelte-check + eslint + stylelint + prettier)
+      - name: Check (svelte-check + oxlint + oxfmt)
         run: npm run check
 
       - name: Unit tests

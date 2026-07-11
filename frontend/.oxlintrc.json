@@ -1,0 +1,29 @@
+{
+	"$schema": "./node_modules/oxlint/configuration_schema.json",
+	"categories": {
+		"correctness": "error",
+		"suspicious": "warn"
+	},
+	"rules": {
+		"no-console": ["error", { "allow": ["warn", "error"] }],
+		"typescript/no-explicit-any": "error"
+	},
+	"overrides": [
+		{
+			"files": ["src/app.d.ts"],
+			"rules": {
+				"unicorn/require-module-specifiers": "off"
+			}
+		}
+	],
+	"ignorePatterns": [
+		"build/",
+		".svelte-kit/",
+		"package/",
+		"static/",
+		"bench/",
+		"coverage/",
+		"src/lib/api/generated/",
+		"src/lib/icons/registry.ts"
+	]
+}

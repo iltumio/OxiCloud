@@ -1,17 +1,28 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('$lib/api/client', () => ({ apiFetch: vi.fn() }));
-vi.mock('$lib/api/csrf', () => ({ getCsrfHeaders: () => ({}) }));
+vi.mock('$lib/api/client', () => ({
+	apiFetch: vi.fn(),
+	apiJson: vi.fn(),
+	ApiError: class ApiError extends Error {},
+	setSessionExpiredHandler: vi.fn()
+}));
+vi.mock('$lib/api/csrf', () => ({ getCsrfHeaders: () => ({}), getCsrfToken: () => '' }));
 
 import { apiFetch } from '$lib/api/client';
 import { copyFiles, copyFolders } from './batch';
 
-const fetchMock = apiFetch as unknown as ReturnType<typeof vi.fn>;
+const jsonRes = (body: unknown = {}, status = 200) =>
+	new Response(JSON.stringify(body), {
+		status,
+		headers: { 'Content-Type': 'application/json' }
+	});
+
+const fetchMock = vi.mocked(apiFetch);
 
 describe('batch copy', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+		fetchMock.mockImplementation(async () => jsonRes({}));
 	});
 
 	it('short-circuits on empty input', async () => {
@@ -24,16 +35,15 @@ describe('batch copy', () => {
 		await copyFiles(['a'], 't');
 		await copyFolders(['b'], null);
 		expect(fetchMock).toHaveBeenCalledTimes(2);
-		expect(fetchMock).toHaveBeenCalledWith(
-			'/api/batch/files/copy',
-			expect.objectContaining({ method: 'POST' })
-		);
+		const first = fetchMock.mock.calls[0][0] as Request;
+		expect(first.url).toContain('/api/batch/files/copy');
+		expect(first.method).toBe('POST');
 	});
 
 	it('throws the server error/message on failure', async () => {
-		fetchMock.mockResolvedValue({ ok: false, status: 400, json: async () => ({ error: 'bad' }) });
+		fetchMock.mockImplementation(async () => jsonRes({ error: 'bad' }, 400));
 		await expect(copyFiles(['a'], 't')).rejects.toThrow('bad');
-		fetchMock.mockResolvedValue({ ok: false, status: 500, json: async () => ({}) });
+		fetchMock.mockImplementation(async () => jsonRes({}, 500));
 		await expect(copyFolders(['b'], 't')).rejects.toThrow(/failed: 500/);
 	});
 });

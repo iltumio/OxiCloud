@@ -1,10 +1,7 @@
 /** Group (ReBAC) endpoints — ported from model/groups.js. */
-import { apiFetch, apiJson } from '$lib/api/client';
-import { getCsrfHeaders } from '$lib/api/csrf';
+import { api } from '$lib/api';
+import { ensureData, throwFailed } from '$lib/api/http';
 import { t } from '$lib/i18n/index.svelte';
-
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
-const enc = encodeURIComponent;
 
 /**
  * Well-known UUID of the predefined "Internal" virtual group (matches the
@@ -48,16 +45,6 @@ export interface GroupMember {
 	id: string;
 }
 
-async function mutate(url: string, method: string, body?: unknown): Promise<void> {
-	const res = await apiFetch(url, {
-		method,
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: body === undefined ? undefined : JSON.stringify(body)
-	});
-	if (!res.ok) throw new Error(`${method} ${url} failed: ${res.status}`);
-}
-
 /** A single page of groups plus the server-reported total (for "Load more"). */
 export interface GroupPage {
 	items: GroupItem[];
@@ -70,11 +57,10 @@ export interface GroupPage {
  * page length so pagination collapses gracefully to a single page.
  */
 export async function listGroupsPage(limit = 50, offset = 0, q?: string): Promise<GroupPage> {
-	const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
-	if (q) params.set('q', q);
-	const data = await apiJson<
-		GroupItem[] | { groups?: GroupItem[]; items?: GroupItem[]; total?: number }
-	>(`/api/groups?${params}`, { credentials: 'same-origin' });
+	const { data: raw, response } = await api.GET('/api/groups', {
+		params: { query: { limit, offset, ...(q ? { q } : {}) } }
+	});
+	const data = ensureData(raw, response, '/api/groups');
 	if (Array.isArray(data)) return { items: data, total: offset + data.length };
 	const items = data.groups ?? data.items ?? [];
 	return { items, total: data.total ?? offset + items.length };
@@ -121,35 +107,62 @@ export function groupIconName(group: Pick<GroupItem, 'is_virtual'>): string {
 	return group.is_virtual ? 'people-roof' : 'user-group';
 }
 
-export function createGroup(name: string, description?: string | null): Promise<void> {
-	return mutate('/api/groups', 'POST', { name, description: description ?? null });
+export async function createGroup(name: string, description?: string | null): Promise<void> {
+	const { response } = await api.POST('/api/groups', {
+		body: { name, description: description ?? null }
+	});
+	if (!response.ok) throwFailed('POST /api/groups', response);
 }
 
-export function renameGroup(id: string, name: string): Promise<void> {
-	return mutate(`/api/groups/${enc(id)}`, 'PATCH', { name });
+export async function renameGroup(id: string, name: string): Promise<void> {
+	const { response } = await api.PATCH('/api/groups/{id}', {
+		params: { path: { id } },
+		body: { name }
+	});
+	if (!response.ok) throwFailed(`PATCH /api/groups/${id}`, response);
 }
 
-export function deleteGroup(id: string): Promise<void> {
-	return mutate(`/api/groups/${enc(id)}`, 'DELETE');
+export async function deleteGroup(id: string): Promise<void> {
+	const { response } = await api.DELETE('/api/groups/{id}', { params: { path: { id } } });
+	if (!response.ok) throwFailed(`DELETE /api/groups/${id}`, response);
 }
 
-export function listMembers(id: string): Promise<GroupMember[]> {
-	return apiJson<GroupMember[]>(`/api/groups/${enc(id)}/members`, { credentials: 'same-origin' });
+export async function listMembers(id: string): Promise<GroupMember[]> {
+	const { data, response } = await api.GET('/api/groups/{id}/members', {
+		params: { path: { id } }
+	});
+	return ensureData(data, response, `/api/groups/${id}/members`);
 }
 
-export function addUserMember(groupId: string, userId: string): Promise<void> {
-	return mutate(`/api/groups/${enc(groupId)}/members`, 'POST', { user_id: userId });
+export async function addUserMember(groupId: string, userId: string): Promise<void> {
+	const { response } = await api.POST('/api/groups/{id}/members', {
+		params: { path: { id: groupId } },
+		body: { user_id: userId }
+	});
+	if (!response.ok) throwFailed(`POST /api/groups/${groupId}/members`, response);
 }
 
 /** Add another group as a nested member. Backend enforces cycle + depth limits. */
-export function addGroupMember(groupId: string, memberGroupId: string): Promise<void> {
-	return mutate(`/api/groups/${enc(groupId)}/members`, 'POST', { group_id: memberGroupId });
+export async function addGroupMember(groupId: string, memberGroupId: string): Promise<void> {
+	const { response } = await api.POST('/api/groups/{id}/members', {
+		params: { path: { id: groupId } },
+		body: { group_id: memberGroupId }
+	});
+	if (!response.ok) throwFailed(`POST /api/groups/${groupId}/members`, response);
 }
 
-export function removeUserMember(groupId: string, userId: string): Promise<void> {
-	return mutate(`/api/groups/${enc(groupId)}/members/user/${enc(userId)}`, 'DELETE');
+export async function removeUserMember(groupId: string, userId: string): Promise<void> {
+	const { response } = await api.DELETE('/api/groups/{id}/members/user/{user_id}', {
+		params: { path: { id: groupId, user_id: userId } }
+	});
+	if (!response.ok) throwFailed(`DELETE /api/groups/${groupId}/members/user/${userId}`, response);
 }
 
-export function removeGroupMember(groupId: string, memberGroupId: string): Promise<void> {
-	return mutate(`/api/groups/${enc(groupId)}/members/group/${enc(memberGroupId)}`, 'DELETE');
+export async function removeGroupMember(groupId: string, memberGroupId: string): Promise<void> {
+	const { response } = await api.DELETE('/api/groups/{id}/members/group/{group_id}', {
+		params: { path: { id: groupId, group_id: memberGroupId } }
+	});
+	if (!response.ok) {
+		throwFailed(`DELETE /api/groups/${groupId}/members/group/${memberGroupId}`, response);
+	}
 }

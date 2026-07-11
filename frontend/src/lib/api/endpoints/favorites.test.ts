@@ -1,13 +1,23 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-vi.mock('$lib/api/client', () => ({ apiFetch: vi.fn(), apiJson: vi.fn() }));
-vi.mock('$lib/api/csrf', () => ({ getCsrfHeaders: () => ({}) }));
+vi.mock('$lib/api/client', () => ({
+	apiFetch: vi.fn(),
+	apiJson: vi.fn(),
+	ApiError: class ApiError extends Error {},
+	setSessionExpiredHandler: vi.fn()
+}));
+vi.mock('$lib/api/csrf', () => ({ getCsrfHeaders: () => ({}), getCsrfToken: () => '' }));
 
-import { apiFetch, apiJson } from '$lib/api/client';
+import { apiFetch } from '$lib/api/client';
 import { dateBucket, sizeBucket, typeLabel, addFavorite, removeFavorite } from './favorites';
 
-const fetchMock = apiFetch as unknown as ReturnType<typeof vi.fn>;
-const jsonMock = apiJson as unknown as ReturnType<typeof vi.fn>;
+const jsonRes = (body: unknown = {}, status = 200) =>
+	new Response(JSON.stringify(body), {
+		status,
+		headers: { 'Content-Type': 'application/json' }
+	});
+
+const fetchMock = vi.mocked(apiFetch);
 
 describe('dateBucket', () => {
 	beforeEach(() => {
@@ -56,12 +66,15 @@ describe('typeLabel', () => {
 describe('favorites mutations', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
-		jsonMock.mockResolvedValue({});
+		fetchMock.mockImplementation(async () => jsonRes({}));
 	});
 	it('addFavorite / removeFavorite call the API', async () => {
 		await addFavorite('file', 'id1');
 		await removeFavorite('file', 'id1');
-		expect(fetchMock).toHaveBeenCalled();
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		const [add, remove] = fetchMock.mock.calls.map(([input]) => input as Request);
+		expect(add.url).toContain('/api/favorites/file/id1');
+		expect(add.method).toBe('POST');
+		expect(remove.method).toBe('DELETE');
 	});
 });

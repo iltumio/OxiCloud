@@ -1,20 +1,42 @@
 import { it, expect, vi, beforeEach } from 'vitest';
-vi.mock('$lib/api/client', () => ({ apiFetch: vi.fn(), apiJson: vi.fn() }));
-vi.mock('$lib/api/csrf', () => ({ getCsrfHeaders: () => ({}) }));
-import { apiFetch, apiJson } from '$lib/api/client';
+vi.mock('$lib/api/client', () => ({
+	apiFetch: vi.fn(),
+	apiJson: vi.fn(),
+	ApiError: class ApiError extends Error {},
+	setSessionExpiredHandler: vi.fn()
+}));
+vi.mock('$lib/api/csrf', () => ({ getCsrfHeaders: () => ({}), getCsrfToken: () => '' }));
+import { apiFetch } from '$lib/api/client';
 import * as shares from './shares';
-const f = apiFetch as unknown as ReturnType<typeof vi.fn>;
-const j = apiJson as unknown as ReturnType<typeof vi.fn>;
+
+const jsonRes = (body: unknown = {}, status = 200) =>
+	new Response(JSON.stringify(body), {
+		status,
+		headers: { 'Content-Type': 'application/json' }
+	});
+
+const f = vi.mocked(apiFetch);
 beforeEach(() => {
 	vi.clearAllMocks();
-	f.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
-	j.mockResolvedValue({});
+	f.mockImplementation(async () => jsonRes({}));
 });
 it('exercises the shares endpoints', async () => {
-	await shares.createShare({ item_id: 'i', item_type: 'folder' } as never).catch(() => {});
-	await shares.listSharesForItem('i', 'folder' as never).catch(() => {});
+	await shares.createShare({ itemId: 'i', itemType: 'folder' }).catch(() => {});
+	await shares.listSharesForItem('i', 'folder').catch(() => {});
 	await shares.getShareById('s').catch(() => {});
-	await shares.updateShare('s', {} as never).catch(() => {});
+	await shares.updateShare('s', {}).catch(() => {});
 	await shares.deleteShare('s').catch(() => {});
-	expect(f.mock.calls.length + j.mock.calls.length).toBeGreaterThan(0);
+	expect(f.mock.calls.length).toBeGreaterThan(0);
+	// listSharesForItem stays on apiFetch(url, init) — the query filter isn't
+	// in the generated spec; the rest arrive as typed-client Requests.
+	expect(f.mock.calls[1][0]).toContain('/api/shares?item_id=i&item_type=folder');
+	expect((f.mock.calls[4][0] as Request).method).toBe('DELETE');
+});
+it('listSharesForItem unwraps both wire shapes and swallows failures', async () => {
+	f.mockImplementationOnce(async () => jsonRes([{ id: '1' }]));
+	await expect(shares.listSharesForItem('i', 'file')).resolves.toHaveLength(1);
+	f.mockImplementationOnce(async () => jsonRes({ items: [{ id: '2' }] }));
+	await expect(shares.listSharesForItem('i', 'file')).resolves.toHaveLength(1);
+	f.mockImplementationOnce(async () => jsonRes({}, 500));
+	await expect(shares.listSharesForItem('i', 'file')).resolves.toEqual([]);
 });

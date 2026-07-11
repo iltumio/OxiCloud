@@ -1,5 +1,5 @@
 /**
- * CSRF double-submit cookie utility — ported from static/js/core/csrf.js.
+ * CSRF double-submit cookie utility.
  *
  * Reads the `oxicloud_csrf` cookie (NOT HttpOnly) and exposes its value as the
  * `X-CSRF-Token` header. The server's `csrf_middleware` validates that the

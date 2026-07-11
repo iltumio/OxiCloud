@@ -1,8 +1,8 @@
 /** Recent endpoints — ported from recentModel.js. */
-import { apiFetch } from '$lib/api/client';
-import { getCsrfHeaders } from '$lib/api/csrf';
+import { api } from '$lib/api';
+import { throwFailed } from '$lib/api/http';
 import {
-	fetchResourcePage,
+	resourceFeedQuery,
 	type ResourceBody,
 	type ResourcePage,
 	type ResourcePageOpts
@@ -15,18 +15,24 @@ export interface RecentResourceItem {
 	resource: ResourceBody;
 }
 
-export function fetchRecentPage(
-	opts?: ResourcePageOpts
+export async function fetchRecentPage(
+	opts: ResourcePageOpts = {}
 ): Promise<ResourcePage<RecentResourceItem>> {
-	return fetchResourcePage<RecentResourceItem>('/api/recent/resources', 'accessed_at', opts);
+	const { data, response } = await api.GET('/api/recent/resources', {
+		params: { query: resourceFeedQuery(opts, 'accessed_at') },
+		cache: 'no-store'
+	});
+	if (!response.ok || !data)
+		throw new Error(`GET /api/recent/resources failed: ${response.status}`);
+	return data;
 }
 
+/**
+ * Clear the whole recent feed. `DELETE /api/recent/clear` — the legacy module
+ * POSTed here, but the backend route (and the generated spec) only accept
+ * DELETE.
+ */
 export async function clearRecent(): Promise<void> {
-	const res = await apiFetch('/api/recent/clear', {
-		method: 'POST',
-		credentials: 'same-origin',
-		headers: { 'Content-Type': 'application/json', ...getCsrfHeaders() },
-		body: '{}'
-	});
-	if (!res.ok) throw new Error(`clear recent failed: ${res.status}`);
+	const { response } = await api.DELETE('/api/recent/clear');
+	if (!response.ok) throwFailed('clear recent', response);
 }

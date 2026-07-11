@@ -1,4 +1,5 @@
 import { sveltekit } from '@sveltejs/kit/vite';
+import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vitest/config';
 import istanbul from 'vite-plugin-istanbul';
 import { svelteTesting } from '@testing-library/svelte/vite';
@@ -28,6 +29,7 @@ const proxy = {
 
 export default defineConfig({
 	plugins: [
+		tailwindcss(),
 		sveltekit(),
 		// Compiles Svelte components in client mode for Vitest component tests
 		// (so onMount etc. run); a no-op outside the test runner.

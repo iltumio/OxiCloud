@@ -1,9 +1,9 @@
 /** Favorites endpoints — ported from favoritesModel.js + features/library. */
-import { apiFetch } from '$lib/api/client';
-import { getCsrfHeaders } from '$lib/api/csrf';
+import { api } from '$lib/api';
+import { throwFailed } from '$lib/api/http';
 import { t } from '$lib/i18n/index.svelte';
 import {
-	fetchResourcePage,
+	resourceFeedQuery,
 	type ResourceBody,
 	type ResourcePage,
 	type ResourcePageOpts
@@ -90,16 +90,10 @@ export async function resolveOwnerName(ownerId: string): Promise<string> {
 	const promise = (async () => {
 		let name = shortId(ownerId);
 		try {
-			const res = await apiFetch(`/api/users/${encodeURIComponent(ownerId)}`, {
-				credentials: 'same-origin'
+			const { data: u, response } = await api.GET('/api/users/{id}', {
+				params: { path: { id: ownerId } }
 			});
-			if (res.ok) {
-				const u = (await res.json()) as {
-					username?: string;
-					given_name?: string;
-					family_name?: string;
-					email?: string;
-				};
+			if (response.ok && u) {
 				const full = [u.given_name, u.family_name].filter(Boolean).join(' ').trim();
 				name = u.username || full || u.email || name;
 			}
@@ -115,27 +109,29 @@ export async function resolveOwnerName(ownerId: string): Promise<string> {
 	return promise;
 }
 
-export function fetchFavoritesPage(
-	opts?: ResourcePageOpts
+export async function fetchFavoritesPage(
+	opts: ResourcePageOpts = {}
 ): Promise<ResourcePage<FavoritesResourceItem>> {
-	return fetchResourcePage<FavoritesResourceItem>('/api/favorites/resources', 'name', opts);
+	const { data, response } = await api.GET('/api/favorites/resources', {
+		params: { query: resourceFeedQuery(opts, 'name') },
+		cache: 'no-store'
+	});
+	if (!response.ok || !data) {
+		throw new Error(`GET /api/favorites/resources failed: ${response.status}`);
+	}
+	return data;
 }
 
 export async function addFavorite(type: ItemType, id: string): Promise<void> {
-	const res = await apiFetch(`/api/favorites/${type}/${id}`, {
-		method: 'POST',
-		credentials: 'same-origin',
-		headers: { 'Content-Type': 'application/json', ...getCsrfHeaders() },
-		body: '{}'
+	const { response } = await api.POST('/api/favorites/{item_type}/{item_id}', {
+		params: { path: { item_type: type, item_id: id } }
 	});
-	if (!res.ok) throw new Error(`add favorite failed: ${res.status}`);
+	if (!response.ok) throwFailed('add favorite', response);
 }
 
 export async function removeFavorite(type: ItemType, id: string): Promise<void> {
-	const res = await apiFetch(`/api/favorites/${type}/${id}`, {
-		method: 'DELETE',
-		credentials: 'same-origin',
-		headers: getCsrfHeaders()
+	const { response } = await api.DELETE('/api/favorites/{item_type}/{item_id}', {
+		params: { path: { item_type: type, item_id: id } }
 	});
-	if (!res.ok) throw new Error(`remove favorite failed: ${res.status}`);
+	if (!response.ok) throwFailed('remove favorite', response);
 }

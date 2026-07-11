@@ -4,6 +4,7 @@
  * favoritesModel/recentModel/trashModel.
  */
 import { apiFetch } from '$lib/api/client';
+import type { ResourceFeedQuery } from '$lib/api/paths.sharing';
 import type { FileItem, FolderItem, ItemType } from '$lib/api/types';
 
 export interface ResourcePageOpts {
@@ -28,6 +29,25 @@ export function buildResourceParams(opts: ResourcePageOpts, defaultOrderBy: stri
 	if (reverse) params.set('reverse', 'true');
 	if (resourceTypes?.length) params.set('resource_types', resourceTypes.join(','));
 	return params.toString();
+}
+
+/**
+ * The same page options as a typed query-parameter object, for the endpoints
+ * that go through the typed openapi-fetch client (`/api/favorites/resources`,
+ * `/api/recent/resources`, `/api/trash/resources`).
+ */
+export function resourceFeedQuery(
+	opts: ResourcePageOpts,
+	defaultOrderBy: string
+): ResourceFeedQuery {
+	const { cursor, orderBy = defaultOrderBy, limit = 50, reverse = false, resourceTypes } = opts;
+	return {
+		order_by: orderBy,
+		limit,
+		...(cursor ? { cursor } : {}),
+		...(reverse ? { reverse: true } : {}),
+		...(resourceTypes?.length ? { resource_types: resourceTypes.join(',') } : {})
+	};
 }
 
 export async function fetchResourcePage<TItem>(

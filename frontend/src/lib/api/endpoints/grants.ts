@@ -1,6 +1,7 @@
 /** Sharing (ReBAC grants) endpoints — ported from model/grants.js. */
-import { apiFetch, apiJson } from '$lib/api/client';
-import { getCsrfHeaders } from '$lib/api/csrf';
+import { api } from '$lib/api';
+import { ensureData, throwFailed } from '$lib/api/http';
+import type { GrantsFeedQuery } from '$lib/api/paths.sharing';
 import type { ItemType } from '$lib/api/types';
 import type { ResourceBody, ResourcePage } from './resources';
 
@@ -12,8 +13,6 @@ import type { ResourceBody, ResourcePage } from './resources';
  * wire shape is identical, so the FE helpers below accept all three.
  */
 export type GrantResourceType = ItemType | 'drive';
-
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 export type SubjectType = 'user' | 'group' | 'email' | 'token';
 /** Roles the share UI exposes. The backend role enum also has `commenter` and
@@ -89,9 +88,14 @@ export function expiryToIso(date: string | null | undefined): string | null {
 	return date ? new Date(`${date}T00:00:00Z`).toISOString() : null;
 }
 
-export function fetchGrantsForResource(type: GrantResourceType, id: string): Promise<Grant[]> {
-	const params = new URLSearchParams({ resource_type: type, resource_id: id });
-	return apiJson<Grant[]>(`/api/grants?${params}`, { credentials: 'same-origin' });
+export async function fetchGrantsForResource(
+	type: GrantResourceType,
+	id: string
+): Promise<Grant[]> {
+	const { data, response } = await api.GET('/api/grants', {
+		params: { query: { resource_type: type, resource_id: id } }
+	});
+	return ensureData(data, response, '/api/grants');
 }
 
 export async function createGrant(
@@ -100,17 +104,11 @@ export async function createGrant(
 	role: ShareRole,
 	expiresAt?: string | null
 ): Promise<CreateGrantResponse> {
-	const res = await apiFetch('/api/grants', {
-		method: 'POST',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: JSON.stringify({ subject, resource, role, expires_at: expiresAt ?? null })
+	const { data, error, response } = await api.POST('/api/grants', {
+		body: { subject, resource, role, expires_at: expiresAt ?? null }
 	});
-	if (!res.ok) {
-		const e = (await res.json().catch(() => ({}))) as { error?: string };
-		throw new Error(e.error || `create grant failed: ${res.status}`);
-	}
-	return (await res.json()) as CreateGrantResponse;
+	if (!response.ok || !data) throwFailed('create grant', response, error);
+	return data;
 }
 
 export async function updateGrantRole(
@@ -119,22 +117,17 @@ export async function updateGrantRole(
 	role: ShareRole,
 	expiresAt?: string | null
 ): Promise<void> {
-	const res = await apiFetch('/api/grants/role', {
-		method: 'PUT',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: JSON.stringify({ subject, resource, role, expires_at: expiresAt ?? null })
+	const { response } = await api.PUT('/api/grants/role', {
+		body: { subject, resource, role, expires_at: expiresAt ?? null }
 	});
-	if (!res.ok) throw new Error(`update role failed: ${res.status}`);
+	if (!response.ok) throwFailed('update role', response);
 }
 
 export async function revokeGrant(grantId: string): Promise<void> {
-	const res = await apiFetch(`/api/grants/${encodeURIComponent(grantId)}`, {
-		method: 'DELETE',
-		credentials: 'same-origin',
-		headers: getCsrfHeaders()
+	const { response } = await api.DELETE('/api/grants/{id}', {
+		params: { path: { id: grantId } }
 	});
-	if (!res.ok) throw new Error(`revoke grant failed: ${res.status}`);
+	if (!response.ok) throwFailed('revoke grant', response);
 }
 
 /**
@@ -143,17 +136,15 @@ export async function revokeGrant(grantId: string): Promise<void> {
  * `rate_limited` summary when the whole call was rate-limited (HTTP 429).
  */
 export async function notifyGrantRecipient(grantId: string): Promise<NotifyOutcomeSet> {
-	const res = await apiFetch(`/api/grants/${encodeURIComponent(grantId)}/notify`, {
-		method: 'POST',
-		credentials: 'same-origin',
-		headers: getCsrfHeaders()
+	const { data, response } = await api.POST('/api/grants/{id}/notify', {
+		params: { path: { id: grantId } }
 	});
-	if (res.status === 204) return { total_recipients: 0, outcomes: [] };
-	if (res.status === 429) {
+	if (response.status === 204) return { total_recipients: 0, outcomes: [] };
+	if (response.status === 429) {
 		return { total_recipients: 1, outcomes: [{ kind: 'rate_limited' }] };
 	}
-	if (res.ok) return (await res.json()) as NotifyOutcomeSet;
-	throw new Error(`notify failed: ${res.status}`);
+	if (response.ok && data) return data;
+	throw new Error(`notify failed: ${response.status}`);
 }
 
 export interface IncomingGrantItem {
@@ -193,33 +184,33 @@ interface GrantsPageOpts {
 	resourceTypes?: ItemType[];
 }
 
-function params(opts: GrantsPageOpts): string {
+function feedQuery(opts: GrantsPageOpts): GrantsFeedQuery {
 	const { cursor, orderBy, limit = 50, reverse = false, resourceTypes } = opts;
-	const p = new URLSearchParams({ limit: String(limit) });
-	if (resourceTypes?.length) p.set('resource_types', resourceTypes.join(','));
-	if (cursor) p.set('cursor', cursor);
-	if (orderBy) p.set('sort_by', orderBy);
-	if (reverse) p.set('reverse', 'true');
-	return p.toString();
+	return {
+		limit,
+		...(resourceTypes?.length ? { resource_types: resourceTypes.join(',') } : {}),
+		...(cursor ? { cursor } : {}),
+		...(orderBy ? { sort_by: orderBy } : {}),
+		...(reverse ? { reverse: true } : {})
+	};
 }
 
 export async function fetchSharedWithMe(
 	opts: GrantsPageOpts = {}
 ): Promise<ResourcePage<IncomingGrantItem>> {
-	const res = await apiFetch(
-		`/api/grants/incoming/resources?${params({ resourceTypes: ['file', 'folder'], ...opts })}`,
-		{ credentials: 'same-origin' }
-	);
-	if (!res.ok) throw new Error(`shared-with-me failed: ${res.status}`);
-	return (await res.json()) as ResourcePage<IncomingGrantItem>;
+	const { data, response } = await api.GET('/api/grants/incoming/resources', {
+		params: { query: feedQuery({ resourceTypes: ['file', 'folder'], ...opts }) }
+	});
+	if (!response.ok || !data) throw new Error(`shared-with-me failed: ${response.status}`);
+	return data;
 }
 
 export async function fetchMyShares(
 	opts: GrantsPageOpts = {}
 ): Promise<ResourcePage<OutgoingGrantItem>> {
-	const res = await apiFetch(`/api/grants/outgoing/resources?${params(opts)}`, {
-		credentials: 'same-origin'
+	const { data, response } = await api.GET('/api/grants/outgoing/resources', {
+		params: { query: feedQuery(opts) }
 	});
-	if (!res.ok) throw new Error(`my-shares failed: ${res.status}`);
-	return (await res.json()) as ResourcePage<OutgoingGrantItem>;
+	if (!response.ok || !data) throw new Error(`my-shares failed: ${response.status}`);
+	return data;
 }

@@ -1,8 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('$lib/api/client', () => ({ apiFetch: vi.fn(), apiJson: vi.fn() }));
+vi.mock('$lib/api/client', () => ({
+	apiFetch: vi.fn(),
+	apiJson: vi.fn(),
+	ApiError: class ApiError extends Error {},
+	setSessionExpiredHandler: vi.fn()
+}));
+vi.mock('$lib/api/csrf', () => ({ getCsrfHeaders: () => ({}), getCsrfToken: () => '' }));
 
-import { apiFetch, apiJson } from '$lib/api/client';
+import { apiFetch } from '$lib/api/client';
 import type { FolderItem } from '$lib/api/types';
 import {
 	fetchFolderListing,
@@ -18,14 +24,14 @@ import {
 type ResourceItem = { resource_type: 'file' | 'folder'; resource: { id: string; name?: string } };
 type ResourcePage = { items?: ResourceItem[]; next_cursor?: string };
 
-function fakeRes(opts: { status: number; body?: ResourcePage }): Response {
-	return {
-		status: opts.status,
-		ok: opts.status >= 200 && opts.status < 300,
-		json: async () => opts.body ?? {},
-		headers: { get: () => null }
-	} as unknown as Response;
-}
+const jsonRes = (body: unknown, status = 200) =>
+	new Response(JSON.stringify(body), {
+		status,
+		headers: { 'Content-Type': 'application/json' }
+	});
+
+const fetchMock = vi.mocked(apiFetch);
+const requestUrl = (call: number) => (fetchMock.mock.calls[call][0] as Request).url;
 
 const emptyListing = (): FolderListing => ({
 	folders: [],
@@ -41,47 +47,40 @@ beforeEach(() => {
 
 describe('fetchFolderListing (cursor-paginated /resources)', () => {
 	it('splits one page of resources into folders + files', async () => {
-		vi.mocked(apiFetch).mockResolvedValue(
-			fakeRes({
-				status: 200,
-				body: {
-					items: [
-						{ resource_type: 'folder', resource: { id: 'd1', name: 'Docs' } },
-						{ resource_type: 'file', resource: { id: 'x1', name: 'a.txt' } }
-					]
-				}
-			})
-		);
+		const body: ResourcePage = {
+			items: [
+				{ resource_type: 'folder', resource: { id: 'd1', name: 'Docs' } },
+				{ resource_type: 'file', resource: { id: 'x1', name: 'a.txt' } }
+			]
+		};
+		fetchMock.mockImplementation(async () => jsonRes(body));
 		const r = await fetchFolderListing('f1');
 		expect(r.status).toBe(200);
 		expect(r.listing?.folders.map((f) => f.id)).toEqual(['d1']);
 		expect(r.listing?.files.map((f) => f.id)).toEqual(['x1']);
 		expect(r.listing?.favoriteIds).toEqual([]);
-		expect(vi.mocked(apiFetch).mock.calls[0][0]).toContain('/api/folders/f1/resources');
+		expect(requestUrl(0)).toContain('/api/folders/f1/resources');
 	});
 
 	it('follows next_cursor across pages', async () => {
-		vi.mocked(apiFetch)
-			.mockResolvedValueOnce(
-				fakeRes({
-					status: 200,
-					body: { items: [{ resource_type: 'file', resource: { id: 'p1' } }], next_cursor: 'c2' }
+		fetchMock
+			.mockImplementationOnce(async () =>
+				jsonRes({
+					items: [{ resource_type: 'file', resource: { id: 'p1' } }],
+					next_cursor: 'c2'
 				})
 			)
-			.mockResolvedValueOnce(
-				fakeRes({
-					status: 200,
-					body: { items: [{ resource_type: 'file', resource: { id: 'p2' } }] }
-				})
+			.mockImplementationOnce(async () =>
+				jsonRes({ items: [{ resource_type: 'file', resource: { id: 'p2' } }] })
 			);
 		const r = await fetchFolderListing('f1');
 		expect(r.listing?.files.map((f) => f.id)).toEqual(['p1', 'p2']);
-		expect(vi.mocked(apiFetch)).toHaveBeenCalledTimes(2);
-		expect(vi.mocked(apiFetch).mock.calls[1][0]).toContain('cursor=c2');
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(requestUrl(1)).toContain('cursor=c2');
 	});
 
 	it('throws a 403 carrying its status', async () => {
-		vi.mocked(apiFetch).mockResolvedValue(fakeRes({ status: 403 }));
+		fetchMock.mockImplementation(async () => new Response('', { status: 403 }));
 		await expect(fetchFolderListing('f1')).rejects.toMatchObject({ status: 403 });
 	});
 });
@@ -134,7 +133,7 @@ describe('folder name cache (breadcrumbs)', () => {
 	});
 
 	it('records the name fetched by getFolder', async () => {
-		vi.mocked(apiJson).mockResolvedValue(folder('gf-1', 'Reports') as never);
+		fetchMock.mockImplementation(async () => jsonRes(folder('gf-1', 'Reports')));
 		const f = await getFolder('gf-1');
 		expect(f.name).toBe('Reports');
 		expect(getFolderName('gf-1')).toBe('Reports');

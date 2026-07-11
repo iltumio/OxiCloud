@@ -1,9 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('$lib/api/client', () => ({ apiFetch: vi.fn(), apiJson: vi.fn() }));
-vi.mock('$lib/api/csrf', () => ({ getCsrfHeaders: () => ({}) }));
+vi.mock('$lib/api/client', () => ({
+	apiFetch: vi.fn(),
+	apiJson: vi.fn(),
+	ApiError: class ApiError extends Error {},
+	setSessionExpiredHandler: vi.fn()
+}));
+vi.mock('$lib/api/csrf', () => ({ getCsrfHeaders: () => ({}), getCsrfToken: () => '' }));
 
-import { apiFetch, apiJson } from '$lib/api/client';
+import { apiFetch } from '$lib/api/client';
 import {
 	displayRole,
 	expiryToIso,
@@ -13,8 +18,13 @@ import {
 	notifyGrantRecipient
 } from './grants';
 
-const fetchMock = apiFetch as unknown as ReturnType<typeof vi.fn>;
-const jsonMock = apiJson as unknown as ReturnType<typeof vi.fn>;
+const jsonRes = (body: unknown = {}, status = 200) =>
+	new Response(JSON.stringify(body), {
+		status,
+		headers: { 'Content-Type': 'application/json' }
+	});
+
+const fetchMock = vi.mocked(apiFetch);
 
 describe('displayRole', () => {
 	it('passes through canonical roles', () => {
@@ -44,8 +54,7 @@ describe('expiryToIso', () => {
 describe('grant mutations', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		fetchMock.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
-		jsonMock.mockResolvedValue({});
+		fetchMock.mockImplementation(async () => jsonRes({}));
 	});
 	it('call the API for create/update/revoke/notify', async () => {
 		await createGrant(
@@ -62,6 +71,22 @@ describe('grant mutations', () => {
 		).catch(() => {});
 		await revokeGrant('g1').catch(() => {});
 		await notifyGrantRecipient('g1').catch(() => {});
-		expect(fetchMock).toHaveBeenCalled();
+		expect(fetchMock).toHaveBeenCalledTimes(4);
+		const urls = fetchMock.mock.calls.map(([input]) => (input as Request).url);
+		expect(urls[0]).toContain('/api/grants');
+		expect(urls[2]).toContain('/api/grants/g1');
+		expect(urls[3]).toContain('/api/grants/g1/notify');
+	});
+	it('notifyGrantRecipient maps 204 and 429 to summary outcomes', async () => {
+		fetchMock.mockImplementation(async () => new Response(null, { status: 204 }));
+		await expect(notifyGrantRecipient('g1')).resolves.toEqual({
+			total_recipients: 0,
+			outcomes: []
+		});
+		fetchMock.mockImplementation(async () => jsonRes({}, 429));
+		await expect(notifyGrantRecipient('g1')).resolves.toEqual({
+			total_recipients: 1,
+			outcomes: [{ kind: 'rate_limited' }]
+		});
 	});
 });

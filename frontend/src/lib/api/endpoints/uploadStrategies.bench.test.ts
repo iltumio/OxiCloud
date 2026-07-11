@@ -124,6 +124,7 @@ describe('upload-dedup strategies', () => {
 			if (s.ownedFrac < 1) expect(z.roundTrips).toBeLessThan(p.roundTrips);
 		}
 		rows.push('╚═══════════════════════════════════════════════════════════════════════════');
+		// oxlint-disable-next-line no-console -- the benchmark table is this test's output
 		console.log(rows.join('\n'));
 	});
 });

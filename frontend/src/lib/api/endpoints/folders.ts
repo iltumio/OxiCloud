@@ -1,14 +1,8 @@
-/** Folder endpoints — ported from filesModel.js + fileOperations.js. */
-import { apiFetch, apiJson } from '$lib/api/client';
-import { getCsrfHeaders } from '$lib/api/csrf';
-import type { FileItem, FolderItem, ItemType } from '$lib/api/types';
-
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
-const NO_CACHE: RequestInit = {
-	credentials: 'same-origin',
-	cache: 'no-store',
-	headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' }
-};
+/** Folder endpoints — ported from the legacy module onto the typed client. */
+import { api } from '$lib/api';
+import { ApiError } from '$lib/api/client';
+import { throwFailed } from '$lib/api/http';
+import type { FileItem, FolderItem } from '$lib/api/types';
 
 export interface FolderListing {
 	folders: FolderItem[];
@@ -89,9 +83,16 @@ export function getFolderName(id: string): string | undefined {
 }
 
 export async function getFolder(id: string): Promise<FolderItem> {
-	const folder = await apiJson<FolderItem>(`/api/folders/${id}`, NO_CACHE);
-	rememberFolderName(folder.id, folder.name);
-	return folder;
+	const { data, response } = await api.GET('/api/folders/{id}', {
+		params: { path: { id } },
+		cache: 'no-store',
+		headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' }
+	});
+	if (!response.ok || !data) {
+		throw new ApiError(response.status, response.statusText, `/api/folders/${id}`);
+	}
+	rememberFolderName(data.id, data.name);
+	return data;
 }
 
 /**
@@ -114,24 +115,25 @@ export async function fetchFolderListing(
 	const files: FileItem[] = [];
 	let cursor: string | undefined;
 	do {
-		const params = new URLSearchParams({ order_by: 'name', limit: '200' });
-		if (opts.forceRefresh) params.set('force_refresh', 'true');
-		if (cursor) params.set('cursor', cursor);
-		const res = await apiFetch(`/api/folders/${folderId}/resources?${params.toString()}`, {
-			credentials: 'same-origin',
+		const { data, response } = await api.GET('/api/folders/{id}/resources', {
+			params: {
+				path: { id: folderId },
+				query: {
+					order_by: 'name',
+					limit: 200,
+					...(opts.forceRefresh ? { force_refresh: true } : {}),
+					...(cursor ? { cursor } : {})
+				}
+			},
 			cache: 'no-store'
 		});
-		if (res.status === 403) throw Object.assign(new Error('Forbidden'), { status: 403 });
-		if (!res.ok) throw new Error(`listing failed: ${res.status}`);
-		const page = (await res.json()) as {
-			items?: { resource_type: ItemType; resource: FolderItem | FileItem }[];
-			next_cursor?: string;
-		};
-		for (const it of page.items ?? []) {
+		if (response.status === 403) throw Object.assign(new Error('Forbidden'), { status: 403 });
+		if (!response.ok) throw new Error(`listing failed: ${response.status}`);
+		for (const it of data?.items ?? []) {
 			if (it.resource_type === 'folder') folders.push(it.resource as FolderItem);
 			else files.push(it.resource as FileItem);
 		}
-		cursor = page.next_cursor;
+		cursor = data?.next_cursor;
 	} while (cursor);
 
 	return { status: 200, listing: { folders, files, favoriteIds: [], sharedIds: [] } };
@@ -144,43 +146,34 @@ export async function listFolder(folderId: string, forceRefresh = false): Promis
 }
 
 export async function createFolder(name: string, parentId: string | null): Promise<FolderItem> {
-	const res = await apiFetch('/api/folders', {
-		method: 'POST',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: JSON.stringify({ name, parent_id: parentId })
+	const { data, response } = await api.POST('/api/folders', {
+		body: { name, parent_id: parentId }
 	});
-	if (!res.ok) throw new Error(`create folder failed: ${res.status}`);
-	return (await res.json()) as FolderItem;
+	if (!response.ok || !data) throwFailed('create folder', response);
+	return data;
 }
 
 export async function renameFolder(folderId: string, name: string): Promise<void> {
-	const res = await apiFetch(`/api/folders/${folderId}/rename`, {
-		method: 'PUT',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: JSON.stringify({ name })
+	const { response } = await api.PUT('/api/folders/{id}/rename', {
+		params: { path: { id: folderId } },
+		body: { name }
 	});
-	if (!res.ok) throw new Error(`rename folder failed: ${res.status}`);
+	if (!response.ok) throwFailed('rename folder', response);
 }
 
 export async function moveFolder(folderId: string, targetFolderId: string | null): Promise<void> {
-	const res = await apiFetch(`/api/folders/${folderId}/move`, {
-		method: 'PUT',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: JSON.stringify({ parent_id: targetFolderId || null })
+	const { response } = await api.PUT('/api/folders/{id}/move', {
+		params: { path: { id: folderId } },
+		body: { parent_id: targetFolderId || null }
 	});
-	if (!res.ok) throw new Error(`move folder failed: ${res.status}`);
+	if (!response.ok) throwFailed('move folder', response);
 }
 
 export async function deleteFolder(folderId: string): Promise<void> {
-	const res = await apiFetch(`/api/folders/${folderId}`, {
-		method: 'DELETE',
-		credentials: 'same-origin',
-		headers: getCsrfHeaders()
+	const { response } = await api.DELETE('/api/folders/{id}', {
+		params: { path: { id: folderId } }
 	});
-	if (!res.ok) throw new Error(`delete folder failed: ${res.status}`);
+	if (!response.ok) throwFailed('delete folder', response);
 }
 
 export function folderZipUrl(folderId: string): string {

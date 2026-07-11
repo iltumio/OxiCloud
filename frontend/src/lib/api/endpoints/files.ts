@@ -1,8 +1,8 @@
-/** File endpoints — ported from fileOperations.js. */
+/** File endpoints — ported from the legacy module onto the typed client. */
+import { api } from '$lib/api';
 import { apiFetch } from '$lib/api/client';
 import { getCsrfHeaders } from '$lib/api/csrf';
-
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
+import { throwFailed } from '$lib/api/http';
 
 /**
  * Instant upload: materialise a file from a blob the caller **already owns**,
@@ -15,32 +15,24 @@ export async function createFileByHash(
 	name: string,
 	hash: string
 ): Promise<{ ok: boolean; status: number; data?: unknown }> {
-	const res = await apiFetch('/api/files/by-hash', {
-		method: 'POST',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: JSON.stringify({ name, folder_id: folderId, hash })
+	const { data, response } = await api.POST('/api/files/by-hash', {
+		body: { name, folder_id: folderId, hash }
 	});
-	const data = res.ok ? await res.json().catch(() => undefined) : undefined;
-	return { ok: res.ok, status: res.status, data };
+	return { ok: response.ok, status: response.status, data };
 }
 
 /**
  * Batch dedup check: given candidate whole-file BLAKE3 hashes, return the set
  * the caller **already owns** — in a single round trip. Drives instant uploads:
  * a file whose hash is in the set can be created with zero content bytes.
- * Resolves an empty set on any failure, so the caller just uploads everything.
+ * Resolves an empty set on any non-2xx, so the caller just uploads everything.
  */
 export async function dedupCheckBatch(hashes: string[]): Promise<Set<string>> {
 	if (hashes.length === 0) return new Set();
-	const res = await apiFetch('/api/dedup/check-batch', {
-		method: 'POST',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: JSON.stringify({ hashes })
+	const { data, response } = await api.POST('/api/dedup/check-batch', {
+		body: { hashes }
 	});
-	if (!res.ok) return new Set();
-	const data = (await res.json().catch(() => null)) as { owned?: string[] } | null;
+	if (!response.ok) return new Set();
 	return new Set(data?.owned ?? []);
 }
 
@@ -120,32 +112,26 @@ export function uploadFileWithProgress(
 }
 
 export async function renameFile(fileId: string, name: string): Promise<void> {
-	const res = await apiFetch(`/api/files/${fileId}/rename`, {
-		method: 'PUT',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: JSON.stringify({ name })
+	const { response } = await api.PUT('/api/files/{id}/rename', {
+		params: { path: { id: fileId } },
+		body: { name }
 	});
-	if (!res.ok) throw new Error(`rename file failed: ${res.status}`);
+	if (!response.ok) throwFailed('rename file', response);
 }
 
 export async function moveFile(fileId: string, targetFolderId: string | null): Promise<void> {
-	const res = await apiFetch(`/api/files/${fileId}/move`, {
-		method: 'PUT',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: JSON.stringify({ folder_id: targetFolderId || null })
+	const { response } = await api.PUT('/api/files/{id}/move', {
+		params: { path: { id: fileId } },
+		body: { folder_id: targetFolderId || null }
 	});
-	if (!res.ok) throw new Error(`move file failed: ${res.status}`);
+	if (!response.ok) throwFailed('move file', response);
 }
 
 export async function deleteFile(fileId: string): Promise<void> {
-	const res = await apiFetch(`/api/files/${fileId}`, {
-		method: 'DELETE',
-		credentials: 'same-origin',
-		headers: getCsrfHeaders()
+	const { response } = await api.DELETE('/api/files/{id}', {
+		params: { path: { id: fileId } }
 	});
-	if (!res.ok) throw new Error(`delete file failed: ${res.status}`);
+	if (!response.ok) throwFailed('delete file', response);
 }
 
 export function fileDownloadUrl(fileId: string): string {

@@ -1,9 +1,12 @@
-/** Public share-link endpoints (/api/shares) — ported from features/sharing. */
+/**
+ * Public share-link endpoints (/api/shares) — ported from features/sharing.
+ * Backed by the generated OpenAPI types (`ShareDto` et al); the results are
+ * returned under the legacy `ShareItem` shape callers already consume.
+ */
+import { api } from '$lib/api';
 import { apiFetch } from '$lib/api/client';
-import { getCsrfHeaders } from '$lib/api/csrf';
+import { throwFailed } from '$lib/api/http';
 import type { ItemType, ShareItem } from '$lib/api/types';
-
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 export interface CreateShareInput {
 	itemId: string;
@@ -16,26 +19,23 @@ export interface CreateShareInput {
 }
 
 export async function createShare(input: CreateShareInput): Promise<ShareItem> {
-	const body = {
-		item_id: input.itemId,
-		item_name: input.itemName ?? null,
-		item_type: input.itemType,
-		password: input.password || null,
-		expires_at: input.expiresAt ? Math.floor(new Date(input.expiresAt).getTime() / 1000) : null
-	};
-	const res = await apiFetch('/api/shares', {
-		method: 'POST',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: JSON.stringify(body)
+	const { data, error, response } = await api.POST('/api/shares', {
+		body: {
+			item_id: input.itemId,
+			item_name: input.itemName ?? null,
+			item_type: input.itemType,
+			password: input.password || null,
+			expires_at: input.expiresAt ? Math.floor(new Date(input.expiresAt).getTime() / 1000) : null
+		}
 	});
-	if (!res.ok) {
-		const e = (await res.json().catch(() => ({}))) as { error?: string };
-		throw new Error(e.error || `create share failed: ${res.status}`);
-	}
-	return (await res.json()) as ShareItem;
+	if (!response.ok || !data) throwFailed('create share', response, error);
+	return data as unknown as ShareItem;
 }
 
+/**
+ * Shares filtered to one item. `GET /api/shares?item_id&item_type` — the query
+ * filter isn't in the generated spec yet, so this stays on `apiFetch`.
+ */
 export async function listSharesForItem(itemId: string, itemType: ItemType): Promise<ShareItem[]> {
 	const params = new URLSearchParams({ item_id: itemId, item_type: itemType });
 	const res = await apiFetch(`/api/shares?${params}`, { credentials: 'same-origin' });
@@ -46,11 +46,11 @@ export async function listSharesForItem(itemId: string, itemType: ItemType): Pro
 
 /** Fetch a single share by its UUID (used to resolve a token's URL on demand). */
 export async function getShareById(shareId: string): Promise<ShareItem> {
-	const res = await apiFetch(`/api/shares/${encodeURIComponent(shareId)}`, {
-		credentials: 'same-origin'
+	const { data, response } = await api.GET('/api/shares/{id}', {
+		params: { path: { id: shareId } }
 	});
-	if (!res.ok) throw new Error(`get share failed: ${res.status}`);
-	return (await res.json()) as ShareItem;
+	if (!response.ok || !data) throwFailed('get share', response);
+	return data as unknown as ShareItem;
 }
 
 export interface UpdateShareInput {
@@ -72,26 +72,19 @@ export async function updateShare(shareId: string, input: UpdateShareInput): Pro
 			? Math.floor(new Date(input.expiresAt).getTime() / 1000)
 			: null;
 	}
-	const res = await apiFetch(`/api/shares/${encodeURIComponent(shareId)}`, {
-		method: 'PUT',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: JSON.stringify(body)
+	const { data, error, response } = await api.PUT('/api/shares/{id}', {
+		params: { path: { id: shareId } },
+		body
 	});
-	if (!res.ok) {
-		const e = (await res.json().catch(() => ({}))) as { error?: string };
-		throw new Error(e.error || `update share failed: ${res.status}`);
-	}
-	return (await res.json()) as ShareItem;
+	if (!response.ok || !data) throwFailed('update share', response, error);
+	return data as unknown as ShareItem;
 }
 
 export async function deleteShare(shareId: string): Promise<void> {
-	const res = await apiFetch(`/api/shares/${shareId}`, {
-		method: 'DELETE',
-		credentials: 'same-origin',
-		headers: getCsrfHeaders()
+	const { response } = await api.DELETE('/api/shares/{id}', {
+		params: { path: { id: shareId } }
 	});
-	if (!res.ok && res.status !== 204) throw new Error(`delete share failed: ${res.status}`);
+	if (!response.ok && response.status !== 204) throwFailed('delete share', response);
 }
 
 /**

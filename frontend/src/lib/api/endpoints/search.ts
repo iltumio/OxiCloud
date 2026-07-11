@@ -1,5 +1,6 @@
 /** Search endpoint — ported from features/files/search.js. */
-import { apiFetch, apiJson } from '$lib/api/client';
+import { api } from '$lib/api';
+import { ensureData } from '$lib/api/http';
 import type { SearchResults, SortBy } from '$lib/api/types';
 
 export interface SearchOptions {
@@ -21,24 +22,29 @@ export interface SearchOptions {
 	sortBy?: SortBy;
 }
 
-export function searchFiles(query: string, opts: SearchOptions = {}): Promise<SearchResults> {
-	const params = new URLSearchParams();
-	params.append('query', query);
-	if (opts.folderId) params.append('folder_id', opts.folderId);
-	if (opts.recursive !== undefined) params.append('recursive', String(opts.recursive));
-	// The backend expects a single comma-separated `type` param (it splits on
-	// ','); appending one param per type yields a "duplicate field" 400.
-	if (opts.fileTypes?.length) params.append('type', opts.fileTypes.join(','));
-	if (opts.minSize != null) params.append('min_size', String(opts.minSize));
-	if (opts.maxSize != null) params.append('max_size', String(opts.maxSize));
-	if (opts.createdAfter != null) params.append('created_after', String(opts.createdAfter));
-	if (opts.createdBefore != null) params.append('created_before', String(opts.createdBefore));
-	if (opts.modifiedAfter != null) params.append('modified_after', String(opts.modifiedAfter));
-	if (opts.modifiedBefore != null) params.append('modified_before', String(opts.modifiedBefore));
-	params.append('limit', String(opts.limit ?? 100));
-	params.append('offset', String(opts.offset ?? 0));
-	params.append('sort_by', opts.sortBy ?? 'relevance');
-	return apiJson<SearchResults>(`/api/search?${params.toString()}`, { credentials: 'same-origin' });
+export async function searchFiles(query: string, opts: SearchOptions = {}): Promise<SearchResults> {
+	const { data, response } = await api.GET('/api/search', {
+		params: {
+			query: {
+				query,
+				...(opts.folderId ? { folder_id: opts.folderId } : {}),
+				...(opts.recursive !== undefined ? { recursive: opts.recursive } : {}),
+				// The backend expects a single comma-separated `type` param (it splits
+				// on ','); one param per type would yield a "duplicate field" 400.
+				...(opts.fileTypes?.length ? { type: opts.fileTypes.join(',') } : {}),
+				...(opts.minSize != null ? { min_size: opts.minSize } : {}),
+				...(opts.maxSize != null ? { max_size: opts.maxSize } : {}),
+				...(opts.createdAfter != null ? { created_after: opts.createdAfter } : {}),
+				...(opts.createdBefore != null ? { created_before: opts.createdBefore } : {}),
+				...(opts.modifiedAfter != null ? { modified_after: opts.modifiedAfter } : {}),
+				...(opts.modifiedBefore != null ? { modified_before: opts.modifiedBefore } : {}),
+				limit: opts.limit ?? 100,
+				offset: opts.offset ?? 0,
+				sort_by: opts.sortBy ?? 'relevance'
+			}
+		}
+	});
+	return ensureData(data, response, '/api/search');
 }
 
 /** A single autocomplete suggestion returned by the lightweight suggest endpoint. */
@@ -56,24 +62,26 @@ export interface SuggestOptions {
  * Lightweight autocomplete suggestions from the backend `GET /api/search/suggest`
  * endpoint — name-only hints without the full search overhead.
  */
-export function searchSuggest(
+export async function searchSuggest(
 	query: string,
 	opts: SuggestOptions = {}
 ): Promise<SearchSuggestions> {
-	const params = new URLSearchParams();
-	params.append('query', query);
-	if (opts.folderId) params.append('folder_id', opts.folderId);
-	if (opts.limit != null) params.append('limit', String(opts.limit));
-	return apiJson<SearchSuggestions>(`/api/search/suggest?${params.toString()}`, {
-		credentials: 'same-origin'
+	const { data, response } = await api.GET('/api/search/suggest', {
+		params: {
+			query: {
+				query,
+				...(opts.folderId ? { folder_id: opts.folderId } : {}),
+				...(opts.limit != null ? { limit: opts.limit } : {})
+			}
+		}
 	});
+	return ensureData(data, response, '/api/search/suggest');
 }
 
 /** Clear the server-side search cache (`DELETE /api/search/cache`). */
 export async function clearSearchCache(): Promise<void> {
-	const res = await apiFetch('/api/search/cache', {
-		method: 'DELETE',
-		credentials: 'same-origin'
-	});
-	if (!res.ok) throw new Error(`Failed to clear search cache: ${res.status} ${res.statusText}`);
+	const { response } = await api.DELETE('/api/search/cache');
+	if (!response.ok) {
+		throw new Error(`Failed to clear search cache: ${response.status} ${response.statusText}`);
+	}
 }

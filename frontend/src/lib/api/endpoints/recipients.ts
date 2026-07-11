@@ -5,7 +5,7 @@
  * shareModal recipient autocomplete (addressBook.searchContacts + _searchGroups
  * + _looksLikeEmail).
  */
-import { apiFetch } from '$lib/api/client';
+import { api } from '$lib/api';
 import { session } from '$lib/stores/session.svelte';
 import type { SubjectType } from './grants';
 
@@ -17,17 +17,13 @@ export interface Recipient {
 	sublabel?: string;
 }
 
-interface Contact {
+/** Wire shape of a system address-book contact (subset consumed here). */
+export interface SystemContact {
 	id: string;
 	first_name?: string;
 	last_name?: string;
 	full_name?: string;
 	email?: Array<{ email: string; is_primary?: boolean }>;
-}
-
-interface GroupResult {
-	id: string;
-	name: string;
 }
 
 /**
@@ -43,23 +39,22 @@ function looksLikeEmail(q: string): boolean {
 // Two caches because the backend response differs (default excludes the caller,
 // `?include_self=1` returns them). Keying by flag avoids one variant overwriting
 // the other.
-let contactCache: Contact[] | null = null;
-let contactCacheWithSelf: Contact[] | null = null;
+let contactCache: SystemContact[] | null = null;
+let contactCacheWithSelf: SystemContact[] | null = null;
 /** `false` once we confirm the system address book is unavailable. */
 let directoryAvailable: boolean | null = null;
 
-async function systemContacts(includeSelf = false): Promise<Contact[]> {
+async function systemContacts(includeSelf = false): Promise<SystemContact[]> {
 	const cached = includeSelf ? contactCacheWithSelf : contactCache;
 	if (cached) return cached;
 	try {
 		// `?include_self=true` (not `=1`) — Axum's `Query` extractor uses
 		// `serde_urlencoded`, which only deserialises `"true"`/`"false"`
 		// for `bool`. Sending `=1` would 400 before the handler runs.
-		const url = includeSelf
-			? '/api/address-books/system/contacts?include_self=true'
-			: '/api/address-books/system/contacts';
-		const res = await apiFetch(url, { credentials: 'same-origin' });
-		if (!res.ok) {
+		const { data, response } = await api.GET('/api/address-books/system/contacts', {
+			params: { query: includeSelf ? { include_self: true } : {} }
+		});
+		if (!response.ok || !data) {
 			directoryAvailable = false;
 			if (includeSelf) {
 				contactCacheWithSelf = [];
@@ -69,10 +64,9 @@ async function systemContacts(includeSelf = false): Promise<Contact[]> {
 			return contactCache;
 		}
 		directoryAvailable = true;
-		const list = (await res.json()) as Contact[];
-		if (includeSelf) contactCacheWithSelf = list;
-		else contactCache = list;
-		return list;
+		if (includeSelf) contactCacheWithSelf = data;
+		else contactCache = data;
+		return data;
 	} catch {
 		directoryAvailable = false;
 		if (includeSelf) {
@@ -93,7 +87,7 @@ export function isDirectoryAvailable(): boolean {
 	return directoryAvailable !== false;
 }
 
-function contactLabel(c: Contact): { label: string; email: string } {
+function contactLabel(c: SystemContact): { label: string; email: string } {
 	const name = [c.first_name, c.last_name].filter(Boolean).join(' ') || c.full_name || '';
 	const email = c.email?.find((e) => e.is_primary)?.email ?? c.email?.[0]?.email ?? '';
 	return { label: name || email || c.id, email };
@@ -101,12 +95,11 @@ function contactLabel(c: Contact): { label: string; email: string } {
 
 async function searchGroups(q: string): Promise<Recipient[]> {
 	try {
-		const res = await apiFetch(`/api/groups/search?q=${encodeURIComponent(q)}&limit=8`, {
-			credentials: 'same-origin'
+		const { data, response } = await api.GET('/api/groups/search', {
+			params: { query: { q, limit: 8 } }
 		});
-		if (!res.ok) return [];
-		const groups = (await res.json()) as GroupResult[];
-		return groups.map((g) => ({ type: 'group' as const, id: g.id, label: g.name }));
+		if (!response.ok || !data) return [];
+		return data.map((g) => ({ type: 'group' as const, id: g.id, label: g.name }));
 	} catch {
 		return [];
 	}
@@ -119,9 +112,11 @@ async function loadGroups(): Promise<Map<string, string>> {
 	if (groupCache) return groupCache;
 	groupCache = new Map();
 	try {
-		const res = await apiFetch('/api/groups/search?q=&limit=200', { credentials: 'same-origin' });
-		if (res.ok) {
-			for (const g of (await res.json()) as GroupResult[]) groupCache.set(g.id, g.name);
+		const { data, response } = await api.GET('/api/groups/search', {
+			params: { query: { q: '', limit: 200 } }
+		});
+		if (response.ok && data) {
+			for (const g of data) groupCache.set(g.id, g.name);
 		}
 	} catch {
 		/* leave empty */

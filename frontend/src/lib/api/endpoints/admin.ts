@@ -3,38 +3,11 @@
  * (incl. logs/retention/live SSE tail), dashboard, settings (OIDC/storage/SMTP),
  * and storage migration (incl. the verify integrity check).
  */
-import { apiFetch, apiJson } from '$lib/api/client';
+import { api } from '$lib/api';
+import { apiFetch } from '$lib/api/client';
 import { getCsrfHeaders } from '$lib/api/csrf';
+import { ensureData, throwFailed } from '$lib/api/http';
 import type { Drive, DriveMember, DriveMemberSubject, DriveRole, User } from '$lib/api/types';
-
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
-
-async function mutate(url: string, method: string, body?: unknown): Promise<void> {
-	const res = await apiFetch(url, {
-		method,
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: body === undefined ? undefined : JSON.stringify(body)
-	});
-	if (!res.ok) {
-		const e = (await res.json().catch(() => ({}))) as { message?: string };
-		throw new Error(e.message || `${method} ${url} failed: ${res.status}`);
-	}
-}
-
-/** POST with no request body that returns a JSON payload (throws on non-2xx). */
-async function postJson<T>(url: string): Promise<T> {
-	const res = await apiFetch(url, {
-		method: 'POST',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() }
-	});
-	if (!res.ok) {
-		const e = (await res.json().catch(() => ({}))) as { message?: string };
-		throw new Error(e.message || `POST ${url} failed: ${res.status}`);
-	}
-	return (await res.json()) as T;
-}
 
 // ── Maintenance ───────────────────────────────────────────────────────────
 
@@ -47,14 +20,22 @@ export interface ReextractResult {
 }
 
 /** Re-scan every audio file and backfill its tag metadata (idempotent). */
-export function reextractAudioMetadata(): Promise<ReextractResult> {
-	return postJson<ReextractResult>('/api/admin/audio/metadata/reextract');
+export async function reextractAudioMetadata(): Promise<ReextractResult> {
+	const { data, error, response } = await api.POST('/api/admin/audio/metadata/reextract');
+	if (!response.ok || !data) {
+		throwFailed('POST /api/admin/audio/metadata/reextract', response, error);
+	}
+	return data;
 }
 
 /** Backfill EXIF / container capture dates for all media, re-bucketing the
  *  Photos timeline by real capture date (idempotent). */
-export function reextractPhotoMetadata(): Promise<ReextractResult> {
-	return postJson<ReextractResult>('/api/admin/photos/metadata/reextract');
+export async function reextractPhotoMetadata(): Promise<ReextractResult> {
+	const { data, error, response } = await api.POST('/api/admin/photos/metadata/reextract');
+	if (!response.ok || !data) {
+		throwFailed('POST /api/admin/photos/metadata/reextract', response, error);
+	}
+	return data;
 }
 
 /** A freshly generated AES-256 at-rest blob-encryption key (base64) plus a
@@ -65,8 +46,12 @@ export interface GeneratedKey {
 }
 
 /** Generate a random AES-256 key for at-rest blob encryption. */
-export function generateEncryptionKey(): Promise<GeneratedKey> {
-	return postJson<GeneratedKey>('/api/admin/settings/storage/generate-key');
+export async function generateEncryptionKey(): Promise<GeneratedKey> {
+	const { data, error, response } = await api.POST('/api/admin/settings/storage/generate-key');
+	if (!response.ok || !data) {
+		throwFailed('POST /api/admin/settings/storage/generate-key', response, error);
+	}
+	return data;
 }
 
 // ── Drives ──────────────────────────────────────────────────────────────
@@ -80,8 +65,9 @@ export function generateEncryptionKey(): Promise<GeneratedKey> {
  * the user-facing listing would skip it — this endpoint returns
  * everything for the admin panel's "Drives" tab.
  */
-export function listAllDrives(): Promise<Drive[]> {
-	return apiJson<Drive[]>('/api/admin/drives', { credentials: 'same-origin' });
+export async function listAllDrives(): Promise<Drive[]> {
+	const { data, response } = await api.GET('/api/admin/drives');
+	return ensureData(data, response, '/api/admin/drives');
 }
 
 /**
@@ -92,10 +78,11 @@ export function listAllDrives(): Promise<Drive[]> {
  * endpoint reuses `list_grants_on_resource` with the admin guard at
  * the route edge, so the same `DriveMember` shape comes back.
  */
-export function listDriveMembersAdmin(driveId: string): Promise<DriveMember[]> {
-	return apiJson<DriveMember[]>(`/api/admin/drives/${encodeURIComponent(driveId)}/members`, {
-		credentials: 'same-origin'
+export async function listDriveMembersAdmin(driveId: string): Promise<DriveMember[]> {
+	const { data, response } = await api.GET('/api/admin/drives/{id}/members', {
+		params: { path: { id: driveId } }
 	});
+	return ensureData(data, response, `/api/admin/drives/${driveId}/members`);
 }
 
 /**
@@ -109,23 +96,12 @@ export async function addDriveMemberAdmin(
 	role: DriveRole,
 	expiresAt?: string | null
 ): Promise<DriveMember> {
-	const res = await apiFetch(`/api/admin/drives/${encodeURIComponent(driveId)}/members`, {
-		method: 'POST',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: JSON.stringify({ subject, role, expires_at: expiresAt ?? null })
+	const { data, error, response } = await api.POST('/api/admin/drives/{id}/members', {
+		params: { path: { id: driveId } },
+		body: { subject, role, expires_at: expiresAt ?? null }
 	});
-	if (!res.ok) {
-		let detail = '';
-		try {
-			const parsed = (await res.json()) as { error?: string; message?: string };
-			detail = parsed.error ?? parsed.message ?? '';
-		} catch {
-			/* response body wasn't JSON */
-		}
-		throw new Error(detail || `add member failed: ${res.status}`);
-	}
-	return (await res.json()) as DriveMember;
+	if (!response.ok || !data) throwFailed('add member', response, error);
+	return data;
 }
 
 /**
@@ -137,24 +113,10 @@ export async function removeDriveMemberAdmin(
 	driveId: string,
 	subject: DriveMemberSubject
 ): Promise<void> {
-	const url =
-		`/api/admin/drives/${encodeURIComponent(driveId)}/members/` +
-		`${encodeURIComponent(subject.type)}/${encodeURIComponent(subject.id)}`;
-	const res = await apiFetch(url, {
-		method: 'DELETE',
-		credentials: 'same-origin',
-		headers: getCsrfHeaders()
+	const { error, response } = await api.DELETE('/api/admin/drives/{id}/members/{kind}/{sid}', {
+		params: { path: { id: driveId, kind: subject.type, sid: subject.id } }
 	});
-	if (!res.ok) {
-		let detail = '';
-		try {
-			const parsed = (await res.json()) as { error?: string; message?: string };
-			detail = parsed.error ?? parsed.message ?? '';
-		} catch {
-			/* response body wasn't JSON */
-		}
-		throw new Error(detail || `remove member failed: ${res.status}`);
-	}
+	if (!response.ok) throwFailed('remove member', response, error);
 }
 
 /**
@@ -168,22 +130,11 @@ export async function removeDriveMemberAdmin(
  * personal) vs `409` (non-empty) when surfacing the failure.
  */
 export async function deleteDriveAdmin(driveId: string): Promise<void> {
-	const res = await apiFetch(`/api/admin/drives/${encodeURIComponent(driveId)}`, {
-		method: 'DELETE',
-		credentials: 'same-origin',
-		headers: getCsrfHeaders()
+	const { error, response } = await api.DELETE('/api/admin/drives/{id}', {
+		params: { path: { id: driveId } }
 	});
-	if (!res.ok) {
-		let detail = '';
-		try {
-			const parsed = (await res.json()) as { error?: string; message?: string };
-			detail = parsed.error ?? parsed.message ?? '';
-		} catch {
-			/* response body wasn't JSON */
-		}
-		// 405 / 409 carry actionable messages from the backend; bubble them.
-		throw new Error(detail || `delete drive failed: ${res.status}`);
-	}
+	// 405 / 409 carry actionable messages from the backend; bubble them.
+	if (!response.ok) throwFailed('delete drive', response, error);
 }
 
 // ── Users ───────────────────────────────────────────────────────────────
@@ -193,10 +144,11 @@ export interface AdminUsersPage {
 	users: User[];
 }
 
-export function listUsers(limit: number, offset: number): Promise<AdminUsersPage> {
-	return apiJson<AdminUsersPage>(`/api/admin/users?limit=${limit}&offset=${offset}`, {
-		credentials: 'same-origin'
+export async function listUsers(limit: number, offset: number): Promise<AdminUsersPage> {
+	const { data, response } = await api.GET('/api/admin/users', {
+		params: { query: { limit, offset } }
 	});
+	return ensureData(data, response, '/api/admin/users');
 }
 
 export interface CreateUserInput {
@@ -208,28 +160,48 @@ export interface CreateUserInput {
 	quota_bytes: number;
 }
 
-export function createUser(input: CreateUserInput): Promise<void> {
-	return mutate('/api/admin/users', 'POST', input);
+export async function createUser(input: CreateUserInput): Promise<void> {
+	const { error, response } = await api.POST('/api/admin/users', { body: input });
+	if (!response.ok) throwFailed('POST /api/admin/users', response, error);
 }
 
-export function setUserRole(userId: string, role: string): Promise<void> {
-	return mutate(`/api/admin/users/${userId}/role`, 'PUT', { role });
+export async function setUserRole(userId: string, role: string): Promise<void> {
+	const { error, response } = await api.PUT('/api/admin/users/{id}/role', {
+		params: { path: { id: userId } },
+		body: { role }
+	});
+	if (!response.ok) throwFailed(`PUT /api/admin/users/${userId}/role`, response, error);
 }
 
-export function setUserActive(userId: string, active: boolean): Promise<void> {
-	return mutate(`/api/admin/users/${userId}/active`, 'PUT', { active });
+export async function setUserActive(userId: string, active: boolean): Promise<void> {
+	const { error, response } = await api.PUT('/api/admin/users/{id}/active', {
+		params: { path: { id: userId } },
+		body: { active }
+	});
+	if (!response.ok) throwFailed(`PUT /api/admin/users/${userId}/active`, response, error);
 }
 
-export function setUserQuota(userId: string, quotaBytes: number): Promise<void> {
-	return mutate(`/api/admin/users/${userId}/quota`, 'PUT', { quota_bytes: quotaBytes });
+export async function setUserQuota(userId: string, quotaBytes: number): Promise<void> {
+	const { error, response } = await api.PUT('/api/admin/users/{id}/quota', {
+		params: { path: { id: userId } },
+		body: { quota_bytes: quotaBytes }
+	});
+	if (!response.ok) throwFailed(`PUT /api/admin/users/${userId}/quota`, response, error);
 }
 
-export function resetUserPassword(userId: string, newPassword: string): Promise<void> {
-	return mutate(`/api/admin/users/${userId}/password`, 'PUT', { new_password: newPassword });
+export async function resetUserPassword(userId: string, newPassword: string): Promise<void> {
+	const { error, response } = await api.PUT('/api/admin/users/{id}/password', {
+		params: { path: { id: userId } },
+		body: { new_password: newPassword }
+	});
+	if (!response.ok) throwFailed(`PUT /api/admin/users/${userId}/password`, response, error);
 }
 
-export function deleteUser(userId: string): Promise<void> {
-	return mutate(`/api/admin/users/${userId}`, 'DELETE');
+export async function deleteUser(userId: string): Promise<void> {
+	const { error, response } = await api.DELETE('/api/admin/users/{id}', {
+		params: { path: { id: userId } }
+	});
+	if (!response.ok) throwFailed(`DELETE /api/admin/users/${userId}`, response, error);
 }
 
 // ── Dashboard ───────────────────────────────────────────────────────────
@@ -250,12 +222,16 @@ export interface AdminDashboard {
 	users_over_quota: number;
 }
 
-export function getDashboard(): Promise<AdminDashboard> {
-	return apiJson<AdminDashboard>('/api/admin/dashboard', { credentials: 'same-origin' });
+export async function getDashboard(): Promise<AdminDashboard> {
+	const { data, response } = await api.GET('/api/admin/dashboard');
+	return ensureData(data, response, '/api/admin/dashboard');
 }
 
-export function setRegistrationEnabled(enabled: boolean): Promise<void> {
-	return mutate('/api/admin/settings/registration', 'PUT', { registration_enabled: enabled });
+export async function setRegistrationEnabled(enabled: boolean): Promise<void> {
+	const { error, response } = await api.PUT('/api/admin/settings/registration', {
+		body: { registration_enabled: enabled }
+	});
+	if (!response.ok) throwFailed('PUT /api/admin/settings/registration', response, error);
 }
 
 // ── SMTP ────────────────────────────────────────────────────────────────
@@ -269,8 +245,9 @@ export interface SmtpInfo {
 	user_state: string;
 }
 
-export function getSmtpInfo(): Promise<SmtpInfo> {
-	return apiJson<SmtpInfo>('/api/admin/smtp/info', { credentials: 'same-origin' });
+export async function getSmtpInfo(): Promise<SmtpInfo> {
+	const { data, response } = await api.GET('/api/admin/smtp/info');
+	return ensureData(data, response, '/api/admin/smtp/info');
 }
 
 export interface SmtpTestResult {
@@ -290,15 +267,17 @@ export interface StorageTestResult {
 }
 
 export async function sendSmtpTest(to: string): Promise<SmtpTestResult> {
-	const res = await apiFetch('/api/admin/smtp/test', {
-		method: 'POST',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: JSON.stringify({ to })
-	});
-	if (res.status === 503)
+	const { data, error, response } = await api.POST('/api/admin/smtp/test', { body: { to } });
+	if (response.status === 503) {
 		return { success: false, message: 'SMTP is not configured on this server.' };
-	return (await res.json().catch(() => ({ success: false }))) as SmtpTestResult;
+	}
+	// The probe reports failure as a JSON body (parsed into `error` on non-2xx).
+	return data ?? asResult<SmtpTestResult>(error) ?? { success: false };
+}
+
+/** Narrow a parsed non-2xx JSON body to the probe-result shape, else null. */
+function asResult<T extends object>(error: unknown): T | null {
+	return typeof error === 'object' && error !== null ? (error as T) : null;
 }
 
 // ── OIDC settings ─────────────────────────────────────────────────────────
@@ -325,24 +304,21 @@ export interface OidcTestResult {
 	provider_name_suggestion?: string;
 }
 
-export function getOidcSettings(): Promise<OidcSettings> {
-	return apiJson<OidcSettings>('/api/admin/settings/oidc', { credentials: 'same-origin' });
+export async function getOidcSettings(): Promise<OidcSettings> {
+	const { data, response } = await api.GET('/api/admin/settings/oidc');
+	return ensureData(data, response, '/api/admin/settings/oidc');
 }
 
 export async function testOidc(issuerUrl: string): Promise<OidcTestResult> {
-	const res = await apiFetch('/api/admin/settings/oidc/test', {
-		method: 'POST',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: JSON.stringify({ issuer_url: issuerUrl })
+	const { data, error } = await api.POST('/api/admin/settings/oidc/test', {
+		body: { issuer_url: issuerUrl }
 	});
-	return (await res
-		.json()
-		.catch(() => ({ success: false, message: 'Request failed' }))) as OidcTestResult;
+	return data ?? asResult<OidcTestResult>(error) ?? { success: false, message: 'Request failed' };
 }
 
-export function saveOidc(body: Record<string, unknown>): Promise<void> {
-	return mutate('/api/admin/settings/oidc', 'PUT', body);
+export async function saveOidc(body: Record<string, unknown>): Promise<void> {
+	const { error, response } = await api.PUT('/api/admin/settings/oidc', { body });
+	if (!response.ok) throwFailed('PUT /api/admin/settings/oidc', response, error);
 }
 
 // ── Storage settings + migration ───────────────────────────────────────────
@@ -362,22 +338,19 @@ export interface StorageSettings {
 	dedup_ratio?: number;
 }
 
-export function getStorageSettings(): Promise<StorageSettings> {
-	return apiJson<StorageSettings>('/api/admin/settings/storage', { credentials: 'same-origin' });
+export async function getStorageSettings(): Promise<StorageSettings> {
+	const { data, response } = await api.GET('/api/admin/settings/storage');
+	return ensureData(data, response, '/api/admin/settings/storage');
 }
 
-export function saveStorage(body: Record<string, unknown>): Promise<void> {
-	return mutate('/api/admin/settings/storage', 'PUT', body);
+export async function saveStorage(body: Record<string, unknown>): Promise<void> {
+	const { error, response } = await api.PUT('/api/admin/settings/storage', { body });
+	if (!response.ok) throwFailed('PUT /api/admin/settings/storage', response, error);
 }
 
 export async function testStorage(body: Record<string, unknown>): Promise<StorageTestResult> {
-	const res = await apiFetch('/api/admin/settings/storage/test', {
-		method: 'POST',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: JSON.stringify(body)
-	});
-	return (await res.json().catch(() => ({ connected: false }))) as StorageTestResult;
+	const { data, error } = await api.POST('/api/admin/settings/storage/test', { body });
+	return data ?? asResult<StorageTestResult>(error) ?? { connected: false };
 }
 
 export interface MigrationStatus {
@@ -389,13 +362,19 @@ export interface MigrationStatus {
 	failed_blobs?: string[];
 }
 
-export function getMigration(): Promise<MigrationStatus> {
-	return apiJson<MigrationStatus>('/api/admin/storage/migration', { credentials: 'same-origin' });
+export async function getMigration(): Promise<MigrationStatus> {
+	const { data, response } = await api.GET('/api/admin/storage/migration');
+	return ensureData(data, response, '/api/admin/storage/migration');
 }
 
-export function migrationAction(action: 'start' | 'pause' | 'resume' | 'complete'): Promise<void> {
-	const body = action === 'start' ? { concurrency: 4 } : {};
-	return mutate(`/api/admin/storage/migration/${action}`, 'POST', body);
+export async function migrationAction(
+	action: 'start' | 'pause' | 'resume' | 'complete'
+): Promise<void> {
+	const { error, response } = await api.POST('/api/admin/storage/migration/{action}', {
+		params: { path: { action } },
+		body: action === 'start' ? { concurrency: 4 } : {}
+	});
+	if (!response.ok) throwFailed(`POST /api/admin/storage/migration/${action}`, response, error);
 }
 
 /** Result of a `verify` integrity check (POST .../migration/verify). */
@@ -413,17 +392,11 @@ export interface MigrationVerifyResult {
  * renders (passed / sample-checked / missing / size-mismatch counts).
  */
 export async function verifyMigration(sampleSize = 100): Promise<MigrationVerifyResult> {
-	const res = await apiFetch('/api/admin/storage/migration/verify', {
-		method: 'POST',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: JSON.stringify({ sample_size: sampleSize })
+	const { data, error, response } = await api.POST('/api/admin/storage/migration/verify', {
+		body: { sample_size: sampleSize }
 	});
-	if (!res.ok) {
-		const e = (await res.json().catch(() => ({}))) as { message?: string };
-		throw new Error(e.message || `verify failed: ${res.status}`);
-	}
-	const r = (await res.json()) as Partial<MigrationVerifyResult>;
+	if (!response.ok) throwFailed('verify', response, error);
+	const r = data ?? {};
 	return {
 		passed: r.passed ?? false,
 		sample_checked: r.sample_checked ?? 0,
@@ -452,7 +425,8 @@ export interface PluginRetention {
 
 /**
  * Install a plugin from a .zip bundle. The browser sets the multipart
- * Content-Type (with boundary) — do not override it here.
+ * Content-Type (with boundary) — do not override it here. Kept on `apiFetch`
+ * (not the typed client): FormData uploads stay off the JSON path.
  */
 export async function installPlugin(bundle: File): Promise<PluginInfo> {
 	const form = new FormData();
@@ -471,19 +445,26 @@ export async function installPlugin(bundle: File): Promise<PluginInfo> {
 }
 
 export async function getPluginRetention(id: string): Promise<PluginRetention | null> {
-	const res = await apiFetch(`/api/admin/plugins/${encodeURIComponent(id)}/retention`, {
-		credentials: 'same-origin'
+	const { data, response } = await api.GET('/api/admin/plugins/{id}/retention', {
+		params: { path: { id } }
 	});
-	if (!res.ok) return null;
-	return (await res.json()) as PluginRetention;
+	if (!response.ok || data === undefined) return null;
+	return data;
 }
 
-export function savePluginRetention(id: string, r: PluginRetention): Promise<void> {
-	return mutate(`/api/admin/plugins/${encodeURIComponent(id)}/retention`, 'PUT', r);
+export async function savePluginRetention(id: string, r: PluginRetention): Promise<void> {
+	const { error, response } = await api.PUT('/api/admin/plugins/{id}/retention', {
+		params: { path: { id } },
+		body: r
+	});
+	if (!response.ok) throwFailed(`PUT /api/admin/plugins/${id}/retention`, response, error);
 }
 
-export function clearPluginLogs(id: string): Promise<void> {
-	return mutate(`/api/admin/plugins/${encodeURIComponent(id)}/logs`, 'DELETE');
+export async function clearPluginLogs(id: string): Promise<void> {
+	const { error, response } = await api.DELETE('/api/admin/plugins/{id}/logs', {
+		params: { path: { id } }
+	});
+	if (!response.ok) throwFailed(`DELETE /api/admin/plugins/${id}/logs`, response, error);
 }
 
 export interface PluginsResult {
@@ -494,19 +475,25 @@ export interface PluginsResult {
 }
 
 export async function listPlugins(): Promise<PluginsResult> {
-	const res = await apiFetch('/api/admin/plugins', { credentials: 'same-origin' });
-	if (res.status === 503) return { available: false, plugins: [] };
-	if (!res.ok) throw new Error(`plugins failed: ${res.status}`);
-	const data = (await res.json()) as { enabled?: boolean; plugins?: PluginInfo[] };
-	return { available: true, enabled: data.enabled, plugins: data.plugins ?? [] };
+	const { data, response } = await api.GET('/api/admin/plugins');
+	if (response.status === 503) return { available: false, plugins: [] };
+	if (!response.ok) throw new Error(`plugins failed: ${response.status}`);
+	return { available: true, enabled: data?.enabled, plugins: data?.plugins ?? [] };
 }
 
-export function setPluginEnabled(id: string, enabled: boolean): Promise<void> {
-	return mutate(`/api/admin/plugins/${encodeURIComponent(id)}/enabled`, 'PUT', { enabled });
+export async function setPluginEnabled(id: string, enabled: boolean): Promise<void> {
+	const { error, response } = await api.PUT('/api/admin/plugins/{id}/enabled', {
+		params: { path: { id } },
+		body: { enabled }
+	});
+	if (!response.ok) throwFailed(`PUT /api/admin/plugins/${id}/enabled`, response, error);
 }
 
-export function deletePlugin(id: string): Promise<void> {
-	return mutate(`/api/admin/plugins/${encodeURIComponent(id)}`, 'DELETE');
+export async function deletePlugin(id: string): Promise<void> {
+	const { error, response } = await api.DELETE('/api/admin/plugins/{id}', {
+		params: { path: { id } }
+	});
+	if (!response.ok) throwFailed(`DELETE /api/admin/plugins/${id}`, response, error);
 }
 
 export interface PluginLogEntry {
@@ -528,16 +515,20 @@ export interface PluginLogPage {
 	entries: PluginLogEntry[];
 }
 
-export function getPluginLogs(
+export async function getPluginLogs(
 	id: string,
 	opts: { limit?: number; offset?: number; level?: string; search?: string } = {}
 ): Promise<PluginLogPage> {
-	const params = new URLSearchParams();
-	params.set('limit', String(opts.limit ?? 50));
-	params.set('offset', String(opts.offset ?? 0));
-	if (opts.level) params.set('level', opts.level);
-	if (opts.search) params.set('search', opts.search);
-	return apiJson<PluginLogPage>(`/api/admin/plugins/${encodeURIComponent(id)}/logs?${params}`, {
-		credentials: 'same-origin'
+	const { data, response } = await api.GET('/api/admin/plugins/{id}/logs', {
+		params: {
+			path: { id },
+			query: {
+				limit: opts.limit ?? 50,
+				offset: opts.offset ?? 0,
+				...(opts.level ? { level: opts.level } : {}),
+				...(opts.search ? { search: opts.search } : {})
+			}
+		}
 	});
+	return ensureData(data, response, `/api/admin/plugins/${id}/logs`);
 }

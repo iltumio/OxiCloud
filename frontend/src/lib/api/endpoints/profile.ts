@@ -1,10 +1,8 @@
 /** Profile / account endpoints — ported from views/profile/profile.js. */
-import { apiFetch } from '$lib/api/client';
-import { getCsrfHeaders } from '$lib/api/csrf';
+import { api } from '$lib/api';
+import { errorDetail, throwFailed } from '$lib/api/http';
 import type { User } from '$lib/api/types';
 import { t } from '$lib/i18n/index.svelte';
-
-const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
 export interface ProfilePatch {
 	username?: string;
@@ -15,19 +13,14 @@ export interface ProfilePatch {
 }
 
 export async function updateProfile(patch: ProfilePatch): Promise<User> {
-	const res = await apiFetch('/api/auth/me/profile', {
-		method: 'PATCH',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: JSON.stringify(patch)
-	});
-	if (!res.ok) {
-		const err = (await res.json().catch(() => ({}))) as { message?: string; error?: string };
+	const { data, error, response } = await api.PATCH('/api/auth/me/profile', { body: patch });
+	if (!response.ok) {
+		const detail = errorDetail(error);
 		// 409 covers two distinct conflicts that share the same status. The
 		// server's audit log carries the structured `reason`; the JSON body
 		// only exposes a human-readable message, so we branch on that.
-		if (res.status === 409) {
-			const msg = (err.message || err.error || '').toLowerCase();
+		if (response.status === 409) {
+			const msg = detail.toLowerCase();
 			const key = msg.includes('already claimed')
 				? 'profile.username_immutable_error'
 				: 'profile.username_taken_error';
@@ -37,7 +30,7 @@ export async function updateProfile(patch: ProfilePatch): Promise<User> {
 			throw new Error(t(key, fallback));
 		}
 		// 403 here means the field is governed by the identity provider.
-		if (res.status === 403) {
+		if (response.status === 403) {
 			throw new Error(
 				t(
 					'profile.edit_oidc_managed',
@@ -45,29 +38,22 @@ export async function updateProfile(patch: ProfilePatch): Promise<User> {
 				)
 			);
 		}
-		throw new Error(err.message || err.error || `profile update failed: ${res.status}`);
+		throw new Error(detail || `profile update failed: ${response.status}`);
 	}
-	return (await res.json()) as User;
+	if (!data) throw new Error(`profile update failed: ${response.status}`);
+	return data;
 }
 
 export async function changePassword(currentPw: string, newPw: string): Promise<void> {
-	const res = await apiFetch('/api/auth/change-password', {
-		method: 'PUT',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: JSON.stringify({ current_password: currentPw, new_password: newPw })
+	const { response } = await api.PUT('/api/auth/change-password', {
+		body: { current_password: currentPw, new_password: newPw }
 	});
-	if (!res.ok) throw new Error(`password change failed: ${res.status}`);
+	if (!response.ok) throwFailed('password change', response);
 }
 
 export async function updateAvatar(image: string | null): Promise<void> {
-	const res = await apiFetch('/api/auth/me/image', {
-		method: 'PUT',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: JSON.stringify({ image })
-	});
-	if (!res.ok) throw new Error(`avatar update failed: ${res.status}`);
+	const { response } = await api.PUT('/api/auth/me/image', { body: { image } });
+	if (!response.ok) throwFailed('avatar update', response);
 }
 
 export interface AppPassword {
@@ -91,33 +77,23 @@ export function isAutoAppPassword(pw: Pick<AppPassword, 'label'>): boolean {
 }
 
 export async function listAppPasswords(): Promise<AppPassword[]> {
-	const res = await apiFetch('/api/auth/app-passwords', { credentials: 'same-origin' });
-	if (!res.ok) return [];
-	const data = (await res.json()) as AppPassword[] | { app_passwords?: AppPassword[] };
+	const { data, response } = await api.GET('/api/auth/app-passwords');
+	if (!response.ok || !data) return [];
 	return Array.isArray(data) ? data : (data.app_passwords ?? []);
 }
 
 /** Returns the one-time generated password (shown once). */
 export async function createAppPassword(label: string): Promise<string> {
-	const res = await apiFetch('/api/auth/app-passwords', {
-		method: 'POST',
-		credentials: 'same-origin',
-		headers: { ...JSON_HEADERS, ...getCsrfHeaders() },
-		body: JSON.stringify({ label })
+	const { data, error, response } = await api.POST('/api/auth/app-passwords', {
+		body: { label }
 	});
-	if (!res.ok) {
-		const e = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
-		throw new Error(e.error || e.message || `create app password failed: ${res.status}`);
-	}
-	const data = (await res.json()) as { password: string };
+	if (!response.ok || !data) throwFailed('create app password', response, error);
 	return data.password;
 }
 
 export async function revokeAppPassword(id: string): Promise<void> {
-	const res = await apiFetch(`/api/auth/app-passwords/${encodeURIComponent(id)}`, {
-		method: 'DELETE',
-		credentials: 'same-origin',
-		headers: getCsrfHeaders()
+	const { response } = await api.DELETE('/api/auth/app-passwords/{id}', {
+		params: { path: { id } }
 	});
-	if (!res.ok) throw new Error(`revoke app password failed: ${res.status}`);
+	if (!response.ok) throwFailed('revoke app password', response);
 }

@@ -1,0 +1,46 @@
+/**
+ * Global stylesheet — Tailwind 4 + daisyUI 5.
+ *
+ * Theme switching: `<html data-theme="light|dark">` (set by the anti-FOUC
+ * script in app.html and by $lib/stores/theme.svelte.ts). No attribute means
+ * "follow the OS": `oxi-light` is the default theme and `oxi-dark` is applied
+ * under `prefers-color-scheme: dark` via `--prefersdark`.
+ *
+ * Both themes extend daisyUI's built-ins (light / dark) and override the brand
+ * primary with OxiCloud orange (#ff5e3a — keep in sync with the splash spinner
+ * in app.html and the mask-icon color).
+ */
+@import 'tailwindcss';
+
+@plugin 'daisyui' {
+	themes:
+		light --default,
+		dark --prefersdark;
+}
+
+@plugin 'daisyui/theme' {
+	name: 'light';
+	default: true;
+	--color-primary: #ff5e3a;
+	--color-primary-content: #ffffff;
+}
+
+@plugin 'daisyui/theme' {
+	name: 'dark';
+	prefersdark: true;
+	--color-primary: #ff5e3a;
+	--color-primary-content: #ffffff;
+}
+
+/* `dark:` utility variant follows the resolved daisyUI theme, not just the OS
+ * media query, so explicit user choice via data-theme wins in both directions. */
+@custom-variant dark {
+	@media (prefers-color-scheme: dark) {
+		&:not([data-theme='light'] *, [data-theme='light']) {
+			@slot;
+		}
+	}
+	&:where([data-theme='dark'], [data-theme='dark'] *) {
+		@slot;
+	}
+}
